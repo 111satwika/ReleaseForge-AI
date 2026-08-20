@@ -1,0 +1,39 @@
+{
+  "name": "deploygenie",
+  "displayName": "DeployGenie AI",
+  "description": "Autonomous AI Release Engineering Platform",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "deploygenie.ping",
+        "title": "DeployGenie: Ping Backend"
+      }
+    ],
+    "configuration": {
+      "title": "DeployGenie",
+      "properties": {
+        "deploygenie.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8420",
+          "description": "URL of the local DeployGenie Core backend."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  }
+}
