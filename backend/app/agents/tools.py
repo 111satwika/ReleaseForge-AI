@@ -112,6 +112,18 @@ def commit_and_push(
     return True, "\n\n".join(log)
 
 
+def push_fix_commit(workspace_path: str, files: list[str], commit_message: str) -> tuple[bool, str]:
+    """Adds a follow-up commit to whatever branch is already checked out (the one an
+    earlier commit_and_push created) and pushes it — for updating an already-open PR."""
+    log: list[str] = []
+    for step in (["add", *files], ["commit", "-m", commit_message], ["push"]):
+        result = _run_git(workspace_path, step)
+        log.append(f"$ git {' '.join(step)}\n{result.stdout}{result.stderr}".strip())
+        if result.returncode != 0:
+            return False, "\n\n".join(log)
+    return True, "\n\n".join(log)
+
+
 def _parse_github_owner_repo(remote_url: str) -> str | None:
     match = re.search(r"github\.com[:/]([^/]+/[^/.]+?)(\.git)?$", remote_url.strip())
     return match.group(1) if match else None

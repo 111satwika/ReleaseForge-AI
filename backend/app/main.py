@@ -40,36 +40,6 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurn]
 
 
-def _format_approval_prompt(payload: dict) -> str:
-    test_passed = payload.get("test_passed")
-    if test_passed is True:
-        test_status = "passed"
-    elif test_passed is False:
-        test_status = f"FAILED\n{payload.get('test_output', '')}"
-    else:
-        test_status = f"skipped — {payload.get('test_output', '')}"
-
-    review_block = ""
-    review_status = payload.get("review_status")
-    if review_status:
-        review_block = (
-            f"Review: {review_status} "
-            f"(risk: {payload.get('review_risk', 'Unknown')}, round {payload.get('review_round', 1)})\n"
-        )
-        if payload.get("review_feedback"):
-            review_block += payload["review_feedback"] + "\n"
-        review_block += "\n"
-
-    return (
-        f"Plan: {payload.get('plan')}\n"
-        f"File: {payload.get('target_file')}\n"
-        f"Tests: {test_status}\n\n"
-        f"{review_block}"
-        "Reply 'approve' to push a branch and open a pull request, or anything else to stop here "
-        "(the file change stays on disk, uncommitted)."
-    )
-
-
 @app.post("/chat")
 async def chat(req: ChatRequest):
     graph = get_graph()
@@ -88,10 +58,12 @@ async def chat(req: ChatRequest):
 
     diff = None
     if "__interrupt__" in result:
-        reply = _format_approval_prompt(result["__interrupt__"][0].value)
+        # Each await_*_approval node builds its own message — the gates ask genuinely
+        # different questions (approve the plan? the code? pushing it?), not one shared template.
+        reply = result["__interrupt__"][0].value.get("message", "")
         state_values = graph.get_state(config).values
         target_file = state_values.get("target_file")
-        if target_file:
+        if target_file and state_values.get("new_content"):
             diff = {
                 "target_file": target_file,
                 "original_content": state_values.get("original_content"),
