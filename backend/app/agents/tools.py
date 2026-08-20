@@ -151,3 +151,30 @@ def open_pull_request(
         return True, compare_url
 
     return False, "Branch pushed, but no `gh` CLI and origin isn't a github.com remote — open the PR manually."
+
+
+def has_dockerfile(workspace_path: str) -> bool:
+    return (Path(workspace_path) / "Dockerfile").exists()
+
+
+def repo_name(workspace_path: str) -> str:
+    return Path(workspace_path).name
+
+
+def run_docker_build(workspace_path: str, tag: str, timeout: int = 300) -> tuple[bool, str]:
+    if shutil.which("docker") is None:
+        return False, "Docker isn't installed, or `docker` isn't on PATH."
+    try:
+        result = subprocess.run(
+            ["docker", "build", "-t", tag, "."],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        return result.returncode == 0, output[-4000:]
+    except FileNotFoundError:
+        return False, "Docker isn't installed, or `docker` isn't on PATH."
+    except subprocess.TimeoutExpired:
+        return False, f"Docker build timed out after {timeout}s."

@@ -28,4 +28,8 @@ class AgentState(TypedDict, total=False):
     pr_url: str
     pr_error: str
 
+    readiness_score: int
+    readiness_recommendation: str  # "GO" | "NO-GO"
+    readiness_breakdown: list[str]
+
     approval_response: str

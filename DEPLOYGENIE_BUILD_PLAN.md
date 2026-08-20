@@ -94,11 +94,17 @@ Fixed in `backend/app/main.py`: `_looks_like_new_instruction()` treats a non-aff
 
 Verified against a scratch repo: at the test-approval gate, replying "make the changes in app.py as well for a divide function" correctly declined the pending change (no branch created, the prior edit stayed on disk uncommitted) and immediately opened a plan-approval prompt for the divide function in the same reply. A plain "no" on a separate run was confirmed to still behave exactly as a simple decline, with no false redirect.
 
-### Phase 3 — Release Readiness + local Docker build — **next**
-A scoring agent (tests/review/security/build → GO/NO-GO) plus Dockerfile generation and a local image build. Introduces structured/numeric LLM output and a genuine human-in-the-loop approval gate (Section 13) before deployment complexity arrives.
+### Phase 3 — Release Readiness + local Docker build — **done**
+Two new nodes after `review` approves (not after the round cap with unresolved concerns — that path still ends at `finish_unresolved`, honestly, without pretending readiness scoring happened for a change review never actually approved):
 
-### Phase 4 — Deployment Strategy + local Kubernetes + Validation/Monitoring/Recovery
-Rolling/blue-green/canary strategy selection, a real deploy to `kind`/`minikube`, smoke tests, a monitoring poll loop, and rollback-on-failure. The heaviest infra phase — it only makes sense once there's a real image and a real release-readiness verdict to act on.
+`release_readiness` is **deterministic, not an LLM guess** — the score is built only from signals DeployGenie actually has: tests passed (+50), review approved (+40), review risk Low/Medium/High (+10/+5/+0). It explicitly does not claim to have run a security scan, dependency check, or infrastructure check, because none of those exist yet — matching the capability-honesty principle from Phase 0's system prompt. A GO/NO-GO threshold (≥70) mirrors the design doc's Section 3.6 example output, but every point is traceable to a real check, not synthesized by a model.
+
+`await_readiness_approval` — the fifth approval gate — shows the score, breakdown, and recommendation, and asks to proceed to build. Declining leaves the PR exactly as it is. Approving runs `build_docker_image`: generates a Dockerfile via LLM if none exists (based on the repo's file listing), **pushes it as a new commit to the same PR** rather than leaving it untracked, then attempts `docker build` — checking for `docker` on PATH first and failing with a clear message instead of a crash if it's missing, the same defensive pattern already used for the missing `gh` CLI.
+
+**Docker Desktop turned out not to be installed on this machine at all** (an earlier note assumed it was, just not on PATH — that was wrong). Built and tested accordingly: verified end-to-end against a scratch repo with a real remote — tests passed → review approved → readiness scored `100/100, GO` (50 + 40 + 10, correctly broken down) → approved → a real, sensible Dockerfile was generated and committed as a new commit on the existing PR branch (confirmed via `git log` on both the repo and the remote) → the actual `docker build` call failed gracefully with "Docker isn't installed, or `docker` isn't on PATH" instead of crashing. The one thing that couldn't be verified is a real image actually building successfully — that needs Docker installed, which the user has deferred for now.
+
+### Phase 4 — Deployment Strategy + local Kubernetes + Validation/Monitoring/Recovery — **blocked on Docker/kind**
+Rolling/blue-green/canary strategy selection, a real deploy to `kind`/`minikube`, smoke tests, a monitoring poll loop, and rollback-on-failure. The heaviest infra phase — it only makes sense once there's a real image and a real release-readiness verdict to act on. Needs Docker actually installed (Phase 3 shipped the build logic but couldn't verify an image ever succeeds) plus `kind` or `minikube` on this machine before it can be built and tested for real.
 
 ### Phase 5 — Memory layers (Postgres-backed)
 Conversation / project / release / incident memory. Comes after Phase 4 so there's real release and incident history to store, not synthetic test data.

@@ -65,6 +65,9 @@ async def classify_intent(state: AgentState) -> dict:
         "base_branch": "",
         "pr_url": "",
         "pr_error": "",
+        "readiness_score": 0,
+        "readiness_recommendation": "",
+        "readiness_breakdown": [],
         "reply": "",
     }
 
@@ -359,24 +362,116 @@ async def review(state: AgentState) -> dict:
 def route_after_review(state: AgentState) -> str:
     if state.get("review_status") == "CHANGES_REQUESTED" and state.get("review_round", 0) < MAX_REVIEW_ROUNDS:
         return "code"
-    return "finish"
+    if state.get("review_status") == "APPROVED":
+        return "release_readiness"
+    return "finish_unresolved"
 
 
-def finish(state: AgentState) -> dict:
+def finish_unresolved(state: AgentState) -> dict:
+    # Only reached when review still says CHANGES_REQUESTED after hitting the round cap —
+    # report it plainly rather than proceeding to readiness scoring as if it were approved.
     pr_url = state.get("pr_url") or state.get("branch_name", "")
-    tail = (
-        "\n\nRelease Readiness, Deployment, Validation, and Monitoring aren't built yet — "
-        "this is as far as the pipeline goes for now."
+    reply = (
+        f"Review still has concerns after {state.get('review_round', 1)} round(s), but I've "
+        f"stopped retrying:\n{state.get('review_feedback', '')}\n\n"
+        f"The PR is open for you to look at: {pr_url}"
     )
-    if state.get("review_status") == "CHANGES_REQUESTED":
-        reply = (
-            f"Review still has concerns after {state.get('review_round', 1)} round(s), but I've "
-            f"stopped retrying:\n{state.get('review_feedback', '')}\n\n"
-            f"The PR is open for you to look at: {pr_url}{tail}"
-        )
-    else:
-        reply = f"Review approved. The PR is open: {pr_url}{tail}"
     return {"reply": reply}
+
+
+def release_readiness(state: AgentState) -> dict:
+    """Deterministic, not an LLM guess — the score is only ever built from signals
+    DeployGenie actually has (tests, review). No security/dependency/infra checks exist
+    yet, so it doesn't pretend to have run any."""
+    score = 0
+    breakdown: list[str] = []
+
+    if state.get("test_passed") is True:
+        score += 50
+        breakdown.append("Tests passed (+50)")
+    elif state.get("test_passed") is None:
+        score += 20
+        breakdown.append("No tests found to run (+20 — untested, not known to be broken)")
+    else:
+        breakdown.append("Tests failed (+0)")
+
+    if state.get("review_status") == "APPROVED":
+        score += 40
+        breakdown.append("Independent review approved (+40)")
+
+    risk = state.get("review_risk", "Unknown")
+    risk_points = {"Low": 10, "Medium": 5}.get(risk, 0)
+    score += risk_points
+    breakdown.append(f"Review risk: {risk} (+{risk_points})")
+
+    return {
+        "readiness_score": score,
+        "readiness_recommendation": "GO" if score >= 70 else "NO-GO",
+        "readiness_breakdown": breakdown,
+    }
+
+
+def await_readiness_approval(state: AgentState) -> dict:
+    breakdown = "\n".join(f"- {line}" for line in state.get("readiness_breakdown", []))
+    message = (
+        f"Release Readiness: {state.get('readiness_score', 0)}/100\n"
+        f"Recommendation: {state.get('readiness_recommendation', 'NO-GO')}\n"
+        f"{breakdown}\n\n"
+        "This score only reflects tests and independent review — there's no security scan, "
+        "dependency check, or infrastructure readiness check built yet.\n\n"
+        "Reply 'approve' to generate a Dockerfile (if one doesn't exist) and build a local "
+        "image, or anything else to stop here — the PR stays open either way."
+    )
+    response = interrupt({"message": message})
+    return {"approval_response": response}
+
+
+def route_after_readiness_approval(state: AgentState) -> str:
+    return "build_docker_image" if is_affirmative(state.get("approval_response", "")) else "declined_at_readiness"
+
+
+def declined_at_readiness(state: AgentState) -> dict:
+    pr_url = state.get("pr_url") or state.get("branch_name", "")
+    return {"reply": f"Okay — I won't build an image. The PR is still open: {pr_url}"}
+
+
+async def build_docker_image(state: AgentState) -> dict:
+    workspace = state["workspace_path"]
+    pr_url = state.get("pr_url") or state.get("branch_name", "")
+
+    generated_note = ""
+    if not tools.has_dockerfile(workspace):
+        llm = get_llm_provider()
+        files = tools.list_files(workspace)
+        prompt = (
+            "Write a Dockerfile for this repository. Look at the file list to infer the "
+            "language and framework. Keep it simple and correct — a working Dockerfile "
+            "matters far more than a clever one.\n\n"
+            "Files in the repo:\n" + "\n".join(files) + "\n\n"
+            "Reply with ONLY the raw Dockerfile contents. No explanation, no markdown fences."
+        )
+        response = await llm.chat([LLMMessage(role="user", content=prompt)])
+        content = response.content.strip()
+        fence = re.match(r"^```[a-zA-Z]*\n(.*)\n```$", content, re.DOTALL)
+        if fence:
+            content = fence.group(1)
+        tools.write_file(workspace, "Dockerfile", content)
+
+        pushed, log = tools.push_fix_commit(workspace, ["Dockerfile"], "DeployGenie: add Dockerfile")
+        generated_note = (
+            "Generated a Dockerfile and added it to the PR.\n\n"
+            if pushed
+            else f"Generated a Dockerfile, but couldn't push it:\n{log}\n\n"
+        )
+
+    branch_name = state.get("branch_name", "")
+    tag_suffix = branch_name.split("/")[-1] if branch_name else "latest"
+    tag = f"deploygenie-{tools.repo_name(workspace).lower().replace(' ', '-')}:{tag_suffix}"
+    ok, log = tools.run_docker_build(workspace, tag)
+
+    if ok:
+        return {"reply": f"{generated_note}Docker image built: {tag}\n\nPR: {pr_url}"}
+    return {"reply": f"{generated_note}Docker build failed:\n\n{log}\n\nPR is still open: {pr_url}"}
 
 
 def build_graph():
@@ -394,7 +489,11 @@ def build_graph():
     graph.add_node("declined_at_test", declined_at_test)
     graph.add_node("publish", publish)
     graph.add_node("review", review)
-    graph.add_node("finish", finish)
+    graph.add_node("finish_unresolved", finish_unresolved)
+    graph.add_node("release_readiness", release_readiness)
+    graph.add_node("await_readiness_approval", await_readiness_approval)
+    graph.add_node("declined_at_readiness", declined_at_readiness)
+    graph.add_node("build_docker_image", build_docker_image)
 
     graph.add_edge(START, "classify_intent")
     graph.add_conditional_edges("classify_intent", route_intent, {"chat": "chat_reply", "task": "plan"})
@@ -421,8 +520,21 @@ def build_graph():
     graph.add_edge("declined_at_test", END)
 
     graph.add_conditional_edges("publish", route_after_publish, {"review": "review", "end": END})
-    graph.add_conditional_edges("review", route_after_review, {"code": "code", "finish": "finish"})
-    graph.add_edge("finish", END)
+    graph.add_conditional_edges(
+        "review",
+        route_after_review,
+        {"code": "code", "release_readiness": "release_readiness", "finish_unresolved": "finish_unresolved"},
+    )
+    graph.add_edge("finish_unresolved", END)
+
+    graph.add_edge("release_readiness", "await_readiness_approval")
+    graph.add_conditional_edges(
+        "await_readiness_approval",
+        route_after_readiness_approval,
+        {"build_docker_image": "build_docker_image", "declined_at_readiness": "declined_at_readiness"},
+    )
+    graph.add_edge("declined_at_readiness", END)
+    graph.add_edge("build_docker_image", END)
 
     return graph.compile(checkpointer=MemorySaver())
 
