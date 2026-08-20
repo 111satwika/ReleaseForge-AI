@@ -1,12 +1,21 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from app.agents.graph import get_graph, is_affirmative
+from app.agents.graph import build_graph, is_affirmative
 from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
+from app.memory import repository as memory
+from app.memory.db import init_db
 
 NEGATIVE = {"no", "n", "nah", "stop", "cancel", "don't", "dont", "nevermind", "never mind", "decline", "rejected", "reject"}
+
+CHECKPOINT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "checkpoints.db"
+CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _looks_like_new_instruction(text: str) -> bool:
@@ -18,7 +27,18 @@ def _looks_like_new_instruction(text: str) -> bool:
     return len(normalized.split()) >= 3
 
 
-app = FastAPI(title="DeployGenie Core")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    # SQLite-backed, not in-memory — a paused approval (or an entire conversation)
+    # now survives a backend restart. MemorySaver lost everything the moment the
+    # process died, which is exactly what happened to a real in-progress approval.
+    async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
+        app.state.graph = build_graph(checkpointer)
+        yield
+
+
+app = FastAPI(title="DeployGenie Core", lifespan=lifespan)
 
 
 class PingRequest(BaseModel):
@@ -52,14 +72,43 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurn]
 
 
+async def _maybe_record_release(graph, config: dict, workspace_path: str) -> None:
+    """Called after a graph run that did NOT pause for approval — i.e. it actually
+    reached an end. Persists one row to release memory if a task (not plain chat)
+    produced an outcome, whatever that outcome was — declined attempts count too."""
+    final_state = await graph.aget_state(config)
+    if final_state.next:
+        return  # still paused on an approval gate, nothing to record yet
+
+    values = final_state.values
+    outcome = values.get("outcome")
+    if not outcome:
+        return  # plain chat turn, or nothing ever got planned
+
+    await memory.record_release(
+        workspace_path=workspace_path,
+        target_file=values.get("target_file") or None,
+        plan=values.get("plan") or None,
+        change_description=values.get("change_description") or None,
+        test_passed=values.get("test_passed"),
+        review_status=values.get("review_status") or None,
+        review_risk=values.get("review_risk") or None,
+        readiness_score=values.get("readiness_score") or None,
+        readiness_recommendation=values.get("readiness_recommendation") or None,
+        branch_name=values.get("branch_name") or None,
+        pr_url=values.get("pr_url") or None,
+        outcome=outcome,
+    )
+
+
 @app.post("/chat")
-async def chat(req: ChatRequest):
-    graph = get_graph()
-    # One active run per repo for now — real per-conversation sessions arrive with Phase 5's memory layer.
+async def chat(req: ChatRequest, request: Request):
+    graph = request.app.state.graph
+    # One active run per repo for now — real per-conversation sessions are a Phase 5.5+ concern.
     config = {"configurable": {"thread_id": req.workspace_path}}
     last_message = req.messages[-1].content if req.messages else ""
 
-    pending = graph.get_state(config)
+    pending = await graph.aget_state(config)
     redirected = False
     if pending.next:
         result = await graph.ainvoke(Command(resume=last_message), config=config)
@@ -83,7 +132,7 @@ async def chat(req: ChatRequest):
         # Each await_*_approval node builds its own message — the gates ask genuinely
         # different questions (approve the plan? the code? pushing it?), not one shared template.
         reply = result["__interrupt__"][0].value.get("message", "")
-        state_values = graph.get_state(config).values
+        state_values = (await graph.aget_state(config)).values
         target_file = state_values.get("target_file")
         if target_file and state_values.get("new_content"):
             diff = {
@@ -93,6 +142,7 @@ async def chat(req: ChatRequest):
             }
     else:
         reply = result.get("reply", "(the agent finished without producing a reply)")
+        await _maybe_record_release(graph, config, req.workspace_path)
 
     if redirected:
         reply = f"(Stopped the previous change — starting this instead.)\n\n{reply}"

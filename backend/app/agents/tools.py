@@ -64,8 +64,9 @@ def detect_test_command(workspace_path: str) -> list[str] | None:
     return None
 
 
-def run_tests(workspace_path: str, timeout: int = 90) -> tuple[bool | None, str]:
-    command = detect_test_command(workspace_path)
+def run_tests_with_command(
+    workspace_path: str, command: list[str] | None, timeout: int = 90
+) -> tuple[bool | None, str]:
     if command is None:
         return None, "No recognized test command found (checked pytest/pyproject.toml, manage.py, package.json)."
 
@@ -84,6 +85,10 @@ def run_tests(workspace_path: str, timeout: int = 90) -> tuple[bool | None, str]
         return None, f"Test command not found on PATH: {' '.join(command)}"
     except subprocess.TimeoutExpired:
         return False, f"Tests timed out after {timeout}s: {' '.join(command)}"
+
+
+def run_tests(workspace_path: str, timeout: int = 90) -> tuple[bool | None, str]:
+    return run_tests_with_command(workspace_path, detect_test_command(workspace_path), timeout)
 
 
 def _run_git(workspace_path: str, args: list[str]) -> subprocess.CompletedProcess:

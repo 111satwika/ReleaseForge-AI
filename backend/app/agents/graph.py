@@ -10,6 +10,7 @@ from app.agents import tools
 from app.agents.state import AgentState
 from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
+from app.memory import repository as memory
 
 AFFIRMATIVE = {"yes", "y", "approve", "approved", "go ahead", "ship it", "do it", "lgtm", "ok", "okay"}
 MAX_REVIEW_ROUNDS = 2
@@ -69,6 +70,7 @@ async def classify_intent(state: AgentState) -> dict:
         "readiness_recommendation": "",
         "readiness_breakdown": [],
         "reply": "",
+        "outcome": "",
     }
 
 
@@ -108,14 +110,20 @@ def _resolve_target_file(target_file: str, files: list[str]) -> str:
 
 async def plan(state: AgentState) -> dict:
     llm = get_llm_provider()
-    files = tools.list_files(state["workspace_path"])
+    workspace = state["workspace_path"]
+    files = tools.list_files(workspace)
+
+    cached_command = await memory.get_cached_test_command(workspace)
+    project_context = f"This repo's test command is already known: `{cached_command}`.\n\n" if cached_command else ""
+
     prompt = (
         "You are the Planner in an AI release engineering pipeline. A user asked for a change "
         "in their repository. Pick exactly ONE existing or new file to modify to satisfy the "
         "request — keep this first change small and focused. If the file already appears in "
         "the list below, copy its path EXACTLY as shown there — do not shorten, guess, or drop "
         "its folder.\n\n"
-        f"User request: {state['user_message']!r}\n\n"
+        + project_context
+        + f"User request: {state['user_message']!r}\n\n"
         "Files currently in the repo (may be truncated):\n" + "\n".join(files) + "\n\n"
         "Reply with ONLY a JSON object, no other text, shaped exactly like:\n"
         '{"plan": "one or two sentence plan", "target_file": "relative/path.ext", '
@@ -129,7 +137,8 @@ async def plan(state: AgentState) -> dict:
             "reply": (
                 "I couldn't turn that into a plan for a single file — could you name a "
                 "specific file, endpoint, or feature to change?"
-            )
+            ),
+            "outcome": "planning_failed",
         }
 
     target_file = _resolve_target_file(parsed["target_file"], files)
@@ -161,7 +170,7 @@ def route_after_plan_approval(state: AgentState) -> str:
 
 
 def declined_at_plan(state: AgentState) -> dict:
-    return {"reply": "Okay — I won't make this change."}
+    return {"reply": "Okay — I won't make this change.", "outcome": "declined_at_plan"}
 
 
 async def code(state: AgentState) -> dict:
@@ -225,11 +234,21 @@ def declined_at_code(state: AgentState) -> dict:
     note = ""
     if state.get("branch_name"):
         note = f" The existing PR still reflects the previous version: {state.get('pr_url') or state['branch_name']}."
-    return {"reply": f"Okay — the change is still on disk, uncommitted. Nothing else happened.{note}"}
+    return {
+        "reply": f"Okay — the change is still on disk, uncommitted. Nothing else happened.{note}",
+        "outcome": "declined_at_code",
+    }
 
 
 async def test(state: AgentState) -> dict:
-    passed, output = tools.run_tests(state["workspace_path"])
+    workspace = state["workspace_path"]
+
+    cached_command = await memory.get_cached_test_command(workspace)
+    command = cached_command.split() if cached_command else tools.detect_test_command(workspace)
+    if command and not cached_command:
+        await memory.remember_test_command(workspace, " ".join(command))
+
+    passed, output = tools.run_tests_with_command(workspace, command)
     return {"test_passed": passed, "test_output": output}
 
 
@@ -258,9 +277,13 @@ def declined_at_test(state: AgentState) -> dict:
             "reply": (
                 "Okay — I won't push this fix. The existing PR still reflects the previous "
                 f"version: {state.get('pr_url') or state['branch_name']}."
-            )
+            ),
+            "outcome": "declined_at_test",
         }
-    return {"reply": "Okay — I won't create a PR. The change is still on disk, uncommitted."}
+    return {
+        "reply": "Okay — I won't create a PR. The change is still on disk, uncommitted.",
+        "outcome": "declined_at_test",
+    }
 
 
 async def publish(state: AgentState) -> dict:
@@ -275,7 +298,7 @@ async def publish(state: AgentState) -> dict:
         commit_message = f"DeployGenie: fix per review — {description}"
         pushed, log = tools.push_fix_commit(workspace, [target], commit_message)
         if not pushed:
-            return {"reply": f"Approved, but pushing the fix failed:\n\n{log}"}
+            return {"reply": f"Approved, but pushing the fix failed:\n\n{log}", "outcome": "publish_failed"}
         return {}
 
     base_branch = tools.current_branch(workspace)
@@ -285,7 +308,7 @@ async def publish(state: AgentState) -> dict:
 
     pushed, log = tools.commit_and_push(workspace, branch_name, [target], commit_message)
     if not pushed:
-        return {"reply": f"Approved, but `git push` failed:\n\n{log}"}
+        return {"reply": f"Approved, but `git push` failed:\n\n{log}", "outcome": "publish_failed"}
 
     ok, pr_result = tools.open_pull_request(
         workspace,
@@ -376,7 +399,7 @@ def finish_unresolved(state: AgentState) -> dict:
         f"stopped retrying:\n{state.get('review_feedback', '')}\n\n"
         f"The PR is open for you to look at: {pr_url}"
     )
-    return {"reply": reply}
+    return {"reply": reply, "outcome": "review_unresolved"}
 
 
 def release_readiness(state: AgentState) -> dict:
@@ -432,7 +455,7 @@ def route_after_readiness_approval(state: AgentState) -> str:
 
 def declined_at_readiness(state: AgentState) -> dict:
     pr_url = state.get("pr_url") or state.get("branch_name", "")
-    return {"reply": f"Okay — I won't build an image. The PR is still open: {pr_url}"}
+    return {"reply": f"Okay — I won't build an image. The PR is still open: {pr_url}", "outcome": "declined_at_readiness"}
 
 
 async def build_docker_image(state: AgentState) -> dict:
@@ -470,11 +493,14 @@ async def build_docker_image(state: AgentState) -> dict:
     ok, log = tools.run_docker_build(workspace, tag)
 
     if ok:
-        return {"reply": f"{generated_note}Docker image built: {tag}\n\nPR: {pr_url}"}
-    return {"reply": f"{generated_note}Docker build failed:\n\n{log}\n\nPR is still open: {pr_url}"}
+        return {"reply": f"{generated_note}Docker image built: {tag}\n\nPR: {pr_url}", "outcome": "docker_built"}
+    return {
+        "reply": f"{generated_note}Docker build failed:\n\n{log}\n\nPR is still open: {pr_url}",
+        "outcome": "docker_build_failed",
+    }
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("classify_intent", classify_intent)
     graph.add_node("chat_reply", chat_reply)
@@ -536,14 +562,7 @@ def build_graph():
     graph.add_edge("declined_at_readiness", END)
     graph.add_edge("build_docker_image", END)
 
-    return graph.compile(checkpointer=MemorySaver())
-
-
-_compiled_graph = None
-
-
-def get_graph():
-    global _compiled_graph
-    if _compiled_graph is None:
-        _compiled_graph = build_graph()
-    return _compiled_graph
+    # MemorySaver is a fallback for callers that don't pass a real checkpointer (tests,
+    # ad-hoc scripts). The FastAPI app always passes a persistent one — see main.py's
+    # lifespan — since MemorySaver's whole state is lost on every process restart.
+    return graph.compile(checkpointer=checkpointer or MemorySaver())

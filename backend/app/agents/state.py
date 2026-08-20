@@ -33,3 +33,7 @@ class AgentState(TypedDict, total=False):
     readiness_breakdown: list[str]
 
     approval_response: str
+
+    # How this task ended, e.g. "declined_at_plan", "docker_built" — set by whichever
+    # terminal node the graph reaches, and persisted to release memory in main.py.
+    outcome: str
