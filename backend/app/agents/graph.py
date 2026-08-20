@@ -95,16 +95,36 @@ async def chat_reply(state: AgentState) -> dict:
     return {"reply": response.content}
 
 
+def _dirname(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _stem(path: str) -> str:
+    name = path.rsplit("/", 1)[-1]
+    return name.rsplit(".", 1)[0] if "." in name else name
+
+
 def _resolve_target_file(target_file: str, files: list[str]) -> str:
-    """If the model returned a bare/shortened filename instead of the real repo-relative
-    path, and exactly one file in the repo has that name, use the real path instead of
-    trusting the guess. Ambiguous or genuinely-new files are left as the model chose."""
+    """If the model's target_file doesn't exist verbatim, try two safe, unambiguous
+    corrections before trusting the guess:
+      1. Same filename, different folder (a dropped or wrong path prefix).
+      2. Same name and folder, different extension — e.g. asked to edit login.html
+         when the project's real file is login.vue, a framework mismatch, not a
+         typo. Only applied when exactly one file matches; genuinely new files or
+         ambiguous cases (multiple matches) are left as the model chose."""
     if target_file in files:
         return target_file
+
     basename = target_file.rsplit("/", 1)[-1]
-    matches = [f for f in files if f.rsplit("/", 1)[-1] == basename]
-    if len(matches) == 1:
-        return matches[0]
+    same_name = [f for f in files if f.rsplit("/", 1)[-1] == basename]
+    if len(same_name) == 1:
+        return same_name[0]
+
+    directory, stem = _dirname(target_file), _stem(target_file)
+    same_stem_same_dir = [f for f in files if _dirname(f) == directory and _stem(f) == stem]
+    if len(same_stem_same_dir) == 1:
+        return same_stem_same_dir[0]
+
     return target_file
 
 
@@ -120,8 +140,9 @@ async def plan(state: AgentState) -> dict:
         "You are the Planner in an AI release engineering pipeline. A user asked for a change "
         "in their repository. Pick exactly ONE existing or new file to modify to satisfy the "
         "request — keep this first change small and focused. If the file already appears in "
-        "the list below, copy its path EXACTLY as shown there — do not shorten, guess, or drop "
-        "its folder.\n\n"
+        "the list below, copy its path EXACTLY as shown there — do not shorten it, guess it, "
+        "drop its folder, or guess a different extension than what similar files in this repo "
+        "actually use (e.g. a Vue project's pages are .vue files, not .html).\n\n"
         + project_context
         + f"User request: {state['user_message']!r}\n\n"
         "Files currently in the repo (may be truncated):\n" + "\n".join(files) + "\n\n"
