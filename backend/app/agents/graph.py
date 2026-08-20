@@ -68,13 +68,28 @@ async def chat_reply(state: AgentState) -> dict:
     return {"reply": response.content}
 
 
+def _resolve_target_file(target_file: str, files: list[str]) -> str:
+    """If the model returned a bare/shortened filename instead of the real repo-relative
+    path, and exactly one file in the repo has that name, use the real path instead of
+    trusting the guess. Ambiguous or genuinely-new files are left as the model chose."""
+    if target_file in files:
+        return target_file
+    basename = target_file.rsplit("/", 1)[-1]
+    matches = [f for f in files if f.rsplit("/", 1)[-1] == basename]
+    if len(matches) == 1:
+        return matches[0]
+    return target_file
+
+
 async def plan(state: AgentState) -> dict:
     llm = get_llm_provider()
     files = tools.list_files(state["workspace_path"])
     prompt = (
         "You are the Planner in an AI release engineering pipeline. A user asked for a change "
         "in their repository. Pick exactly ONE existing or new file to modify to satisfy the "
-        "request — keep this first change small and focused.\n\n"
+        "request — keep this first change small and focused. If the file already appears in "
+        "the list below, copy its path EXACTLY as shown there — do not shorten, guess, or drop "
+        "its folder.\n\n"
         f"User request: {state['user_message']!r}\n\n"
         "Files currently in the repo (may be truncated):\n" + "\n".join(files) + "\n\n"
         "Reply with ONLY a JSON object, no other text, shaped exactly like:\n"
@@ -92,9 +107,11 @@ async def plan(state: AgentState) -> dict:
             )
         }
 
+    target_file = _resolve_target_file(parsed["target_file"], files)
+
     return {
         "plan": parsed.get("plan", ""),
-        "target_file": parsed["target_file"],
+        "target_file": target_file,
         "change_description": parsed.get("change_description", state["user_message"]),
     }
 

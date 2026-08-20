@@ -1,9 +1,15 @@
 import * as vscode from 'vscode';
 import { ensureBackendRunning, stopBackend } from './backendManager';
 import { ChatViewProvider } from './chatViewProvider';
+import { DEPLOYGENIE_DIFF_SCHEME, OriginalContentProvider } from './diffProvider';
 
 export function activate(context: vscode.ExtensionContext) {
-  const chatProvider = new ChatViewProvider(context.extensionUri);
+  const originalContentProvider = new OriginalContentProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(DEPLOYGENIE_DIFF_SCHEME, originalContentProvider),
+  );
+
+  const chatProvider = new ChatViewProvider(context.extensionUri, originalContentProvider);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider),
   );

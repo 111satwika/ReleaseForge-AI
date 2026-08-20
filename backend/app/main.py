@@ -86,9 +86,18 @@ async def chat(req: ChatRequest):
             config=config,
         )
 
+    diff = None
     if "__interrupt__" in result:
         reply = _format_approval_prompt(result["__interrupt__"][0].value)
+        state_values = graph.get_state(config).values
+        target_file = state_values.get("target_file")
+        if target_file:
+            diff = {
+                "target_file": target_file,
+                "original_content": state_values.get("original_content"),
+                "new_content": state_values.get("new_content", ""),
+            }
     else:
         reply = result.get("reply", "(the agent finished without producing a reply)")
 
-    return {"reply": reply, "model": "deploygenie-agent"}
+    return {"reply": reply, "model": "deploygenie-agent", "diff": diff}

@@ -1,9 +1,16 @@
 import * as vscode from 'vscode';
 import { ensureBackendRunning } from './backendManager';
+import { OriginalContentProvider } from './diffProvider';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface ProposedDiff {
+  target_file: string;
+  original_content: string | null;
+  new_content: string;
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -12,7 +19,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private history: ChatMessage[] = [];
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly originalContentProvider: OriginalContentProvider,
+  ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -75,7 +85,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (!res.ok) {
         throw new Error(`Backend returned ${res.status}`);
       }
-      const data = (await res.json()) as { reply: string; model: string };
+      const data = (await res.json()) as { reply: string; model: string; diff?: ProposedDiff | null };
       this.history.push({ role: 'assistant', content: data.reply });
       this.view?.webview.postMessage({
         type: 'message',
@@ -83,6 +93,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         content: data.reply,
         model: data.model,
       });
+
+      if (data.diff) {
+        await this.showDiff(data.diff, workspacePath);
+      }
     } catch (err) {
       this.view?.webview.postMessage({
         type: 'message',
@@ -92,6 +106,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } finally {
       this.view?.webview.postMessage({ type: 'thinking', value: false });
     }
+  }
+
+  private async showDiff(diff: ProposedDiff, workspacePath: string): Promise<void> {
+    const leftUri = this.originalContentProvider.setContent(
+      diff.target_file,
+      diff.original_content ?? '',
+    );
+    const rightUri = vscode.Uri.joinPath(vscode.Uri.file(workspacePath), diff.target_file);
+    const title = diff.original_content === null
+      ? `DeployGenie: new file ${diff.target_file}`
+      : `DeployGenie: proposed change to ${diff.target_file}`;
+
+    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
   }
 
   private getHtml(webview: vscode.Webview): string {
@@ -208,7 +235,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div id="repo"><span class="dot"></span><span id="repoName">No repo open</span></div>
-  <div id="messages"><div id="empty">Ask DeployGenie something about this repo. (Right now it can only talk — reading and changing files arrives in a later phase.)</div></div>
+  <div id="messages"><div id="empty">Describe a change and DeployGenie will edit a file, run your tests, and show you a diff to review before anything is committed or pushed.</div></div>
   <div id="thinking">DeployGenie is thinking…</div>
   <div id="inputRow">
     <textarea id="input" placeholder="Message DeployGenie…" rows="1"></textarea>
