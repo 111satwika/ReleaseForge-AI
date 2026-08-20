@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+from langgraph.types import Command
 from pydantic import BaseModel
 
+from app.agents.graph import get_graph
 from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
 
@@ -38,19 +40,43 @@ class ChatRequest(BaseModel):
     messages: list[ChatTurn]
 
 
+def _format_approval_prompt(payload: dict) -> str:
+    test_passed = payload.get("test_passed")
+    if test_passed is True:
+        test_status = "passed"
+    elif test_passed is False:
+        test_status = f"FAILED\n{payload.get('test_output', '')}"
+    else:
+        test_status = f"skipped — {payload.get('test_output', '')}"
+
+    return (
+        f"Plan: {payload.get('plan')}\n"
+        f"File: {payload.get('target_file')}\n"
+        f"Tests: {test_status}\n\n"
+        "Reply 'approve' to push a branch and open a pull request, or anything else to stop here "
+        "(the file change stays on disk, uncommitted)."
+    )
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    llm = get_llm_provider()
+    graph = get_graph()
+    # One active run per repo for now — real per-conversation sessions arrive with Phase 5's memory layer.
+    config = {"configurable": {"thread_id": req.workspace_path}}
+    last_message = req.messages[-1].content if req.messages else ""
 
-    system_prompt = (
-        "You are DeployGenie, an AI release engineering assistant. "
-        f"The user's current repository is at: {req.workspace_path}. "
-        "You do not yet have tools to read files, run commands, or make changes — "
-        "that arrives in a later development phase. If asked to inspect or modify "
-        "the repo, say that plainly instead of pretending to have done it."
-    )
-    llm_messages = [LLMMessage(role="system", content=system_prompt)]
-    llm_messages += [LLMMessage(role=m.role, content=m.content) for m in req.messages]
+    pending = graph.get_state(config)
+    if pending.next:
+        result = await graph.ainvoke(Command(resume=last_message), config=config)
+    else:
+        result = await graph.ainvoke(
+            {"workspace_path": req.workspace_path, "user_message": last_message},
+            config=config,
+        )
 
-    response = await llm.chat(llm_messages)
-    return {"reply": response.content, "model": response.model}
+    if "__interrupt__" in result:
+        reply = _format_approval_prompt(result["__interrupt__"][0].value)
+    else:
+        reply = result.get("reply", "(the agent finished without producing a reply)")
+
+    return {"reply": reply, "model": "deploygenie-agent"}

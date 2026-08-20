@@ -44,7 +44,9 @@ MCP servers / tools   (introduced in Phase 7, once we know what to wrap)
 
 - **Ollama models available:** `qwen2.5:7b-instruct` (general reasoning/planning), `llama3.2:3b`, `llava:latest` (vision, unused so far). No code-specialized model pulled yet — `qwen2.5-coder:7b` is recommended once the Coding Agent needs real code edits.
 - **Docker Desktop:** installed but not on PATH in PowerShell or Git Bash as of this writing — needs a look before Phase 3 (image builds).
+- **GitHub CLI (`gh`):** not installed. `open_pull_request()` falls back to returning a GitHub compare URL (`.../compare/base...branch?expand=1`) instead of failing outright when `gh` is missing.
 - **7B-class local models are noticeably weaker** than Claude/GPT-4-class at reliable multi-step planning and structured tool-call output. This isn't a blocker, but expect the graph to need retry/validation logic specifically to compensate — a deliberate design point, not a workaround.
+- **Local inference latency is real:** a single trivial `qwen2.5:7b-instruct` call measured ~35s (mostly model load + prompt eval on this hardware). A task request costs 3 sequential calls (classify → plan → code) before the approval gate, so expect 60–120s+ per task turn. Chat and approval/decline replies are 1 call or 0 calls (approval resume is pure Python, no LLM) and stay fast.
 
 ---
 
@@ -55,10 +57,16 @@ MCP servers / tools   (introduced in Phase 7, once we know what to wrap)
 
 **Pulled forward from Phase 10:** a real sidebar chat UI (VS Code webview view, themed to match the editor) so the extension is actually usable against any open repo instead of a single diagnostic command. Shows the active repo name, sends conversation history to a new `/chat` backend endpoint, and is explicit in its system prompt that it can't read or change files yet — that's still Phase 1. This is the interaction surface Phase 1's agent graph plugs into next; the UI shell existing first means each later phase adds capability behind an already-working interface instead of building UI and agent logic at the same time.
 
-### Phase 1 — Vertical slice: Planner → Coding → Test → PR — **next**
-One LangGraph graph, three-ish nodes, editing real files in a real target repo, running its test suite, opening a real PR via the GitHub CLI. No MCP, no review agent, no deployment. Proves the entire "agent writes code and it actually works" premise before anything else is built on top of it.
+### Phase 1 — Vertical slice: Planner → Coding → Test → PR — **done**
+One LangGraph graph (`backend/app/agents/graph.py`), driven entirely through the Phase 0 chat panel — no new UI needed. No MCP, no review agent, no deployment: file edits and git calls are plain Python/subprocess, on purpose (Phase 7 wraps them in MCP later, once they're understood).
 
-### Phase 2 — Independent Review Agent + reflection loop
+Flow: `classify_intent` (LLM: is this a repo task or just conversation?) → `plan` (LLM: pick one target file + describe the change, as JSON) → `code` (LLM: write the file's full new contents, written to disk immediately) → `test` (detects and runs pytest/`npm test`/Django, no LLM) → `await_approval` — a real LangGraph `interrupt()`, pausing the graph and returning plan + test result to the chat panel — → `create_pr` (only on resume; git checkout/add/commit/push, then `gh pr create` or a compare-URL fallback).
+
+Verified against a disposable scratch repo (never the real project repo): chit-chat correctly stayed conversational; a task request produced a correct file edit that passed its real pytest suite; approving triggered a real branch/commit and a graceful, clearly-reported failure on `git push` (no remote on the scratch repo — the failure path itself was the thing being tested); declining left the edit on disk, uncommitted, with no git side effects at all.
+
+Deliberately out of scope here (arrives in later phases): no re-planning if tests fail — Phase 1 just reports failure and still asks for approval, since the fix-and-retry loop is Phase 2's reflection pattern; no multi-file changes; no conversation memory beyond the single pending approval (Phase 5).
+
+### Phase 2 — Independent Review Agent + reflection loop — **next**
 A separate LLM context/prompt from the Coding Agent (same-agent review misses its own blind spots). Adds the CHANGES_REQUESTED → fix → re-review branch in the graph — the design doc's first reflection pattern (Section 12).
 
 ### Phase 3 — Release Readiness + local Docker build
