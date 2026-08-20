@@ -10,6 +10,24 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "deploygenie",
+          "title": "DeployGenie",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "deploygenie": [
+        {
+          "type": "webview",
+          "id": "deploygenie.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "deploygenie.ping",

@@ -53,6 +53,8 @@ MCP servers / tools   (introduced in Phase 7, once we know what to wrap)
 ### Phase 0 — Scaffolding — **done**
 `extension/` (TypeScript, compiles, one command that pings the backend) and `backend/` (FastAPI + the `LLMProvider` interface + Ollama adapter). Verified end-to-end: extension command → backend → Ollama → response.
 
+**Pulled forward from Phase 10:** a real sidebar chat UI (VS Code webview view, themed to match the editor) so the extension is actually usable against any open repo instead of a single diagnostic command. Shows the active repo name, sends conversation history to a new `/chat` backend endpoint, and is explicit in its system prompt that it can't read or change files yet — that's still Phase 1. This is the interaction surface Phase 1's agent graph plugs into next; the UI shell existing first means each later phase adds capability behind an already-working interface instead of building UI and agent logic at the same time.
+
 ### Phase 1 — Vertical slice: Planner → Coding → Test → PR — **next**
 One LangGraph graph, three-ish nodes, editing real files in a real target repo, running its test suite, opening a real PR via the GitHub CLI. No MCP, no review agent, no deployment. Proves the entire "agent writes code and it actually works" premise before anything else is built on top of it.
 

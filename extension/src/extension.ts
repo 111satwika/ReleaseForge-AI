@@ -1,6 +1,12 @@
 import * as vscode from 'vscode';
+import { ChatViewProvider } from './chatViewProvider';
 
 export function activate(context: vscode.ExtensionContext) {
+  const chatProvider = new ChatViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider),
+  );
+
   const disposable = vscode.commands.registerCommand('deploygenie.ping', async () => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
