@@ -1,10 +1,21 @@
 import * as vscode from 'vscode';
+import { ensureBackendRunning, stopBackend } from './backendManager';
 import { ChatViewProvider } from './chatViewProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   const chatProvider = new ChatViewProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, chatProvider),
+  );
+
+  void ensureBackendRunning();
+  context.subscriptions.push({ dispose: stopBackend });
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deploygenie.restartBackend', async () => {
+      stopBackend();
+      await ensureBackendRunning();
+    }),
   );
 
   const disposable = vscode.commands.registerCommand('deploygenie.ping', async () => {
@@ -37,4 +48,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 }
 
-export function deactivate() {}
+export function deactivate() {
+  stopBackend();
+}

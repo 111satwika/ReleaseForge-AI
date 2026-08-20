@@ -37,6 +37,10 @@
       {
         "command": "deploygenie.ping",
         "title": "DeployGenie: Ping Backend"
+      },
+      {
+        "command": "deploygenie.restartBackend",
+        "title": "DeployGenie: Restart Backend"
       }
     ],
     "configuration": {
@@ -46,13 +50,26 @@
           "type": "string",
           "default": "http://127.0.0.1:8420",
           "description": "URL of the local DeployGenie Core backend."
+        },
+        "deploygenie.backendDir": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Path to the DeployGenie backend folder (the one containing app/main.py). Leave empty to be prompted once. User-level only, so an untrusted workspace can't redirect it."
+        },
+        "deploygenie.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "description": "Python interpreter to run the backend with. Leave empty to auto-detect <backendDir>/.venv. User-level only, so an untrusted workspace can't redirect it."
         }
       }
     }
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "release": "npm run compile && node scripts/release.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

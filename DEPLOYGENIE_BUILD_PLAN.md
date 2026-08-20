@@ -66,6 +66,8 @@ Verified against a disposable scratch repo (never the real project repo): chit-c
 
 Deliberately out of scope here (arrives in later phases): no re-planning if tests fail — Phase 1 just reports failure and still asks for approval, since the fix-and-retry loop is Phase 2's reflection pattern; no multi-file changes; no conversation memory beyond the single pending approval (Phase 5).
 
+**Also pulled forward from Phase 10:** the extension is now installed as a persistent VS Code extension (`vsce package` + `code --install-extension`, wrapped in a one-line `npm run release`) instead of only running via F5's Extension Development Host, and it auto-starts the backend itself (`extension/src/backendManager.ts`) — checks `/health`, spawns `uvicorn` if it isn't up, prompts once (folder picker) to locate the backend if unconfigured, then remembers the location in *user* (not workspace) settings so an untrusted repo's `.vscode/settings.json` can't redirect which Python binary gets launched.
+
 ### Phase 2 — Independent Review Agent + reflection loop — **next**
 A separate LLM context/prompt from the Coding Agent (same-agent review misses its own blind spots). Adds the CHANGES_REQUESTED → fix → re-review branch in the graph — the design doc's first reflection pattern (Section 12).
 

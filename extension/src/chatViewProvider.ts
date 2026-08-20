@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ensureBackendRunning } from './backendManager';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -56,6 +57,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.view?.webview.postMessage({ type: 'thinking', value: true });
     try {
+      const backendUp = await ensureBackendRunning();
+      if (!backendUp) {
+        this.view?.webview.postMessage({
+          type: 'message',
+          role: 'assistant',
+          content: "DeployGenie's backend isn't running and couldn't be started automatically. Run \"DeployGenie: Restart Backend\" from the Command Palette once it's set up.",
+        });
+        return;
+      }
+
       const res = await fetch(`${backendUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,7 +87,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.view?.webview.postMessage({
         type: 'message',
         role: 'assistant',
-        content: `Couldn't reach the DeployGenie backend at ${backendUrl}. Is it running? (${err})`,
+        content: `Couldn't reach the DeployGenie backend at ${backendUrl}. (${err})`,
       });
     } finally {
       this.view?.webview.postMessage({ type: 'thinking', value: false });
