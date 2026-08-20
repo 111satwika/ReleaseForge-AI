@@ -106,7 +106,22 @@ def route_after_plan(state: AgentState) -> str:
 async def code(state: AgentState) -> dict:
     llm = get_llm_provider()
     target = state["target_file"]
-    original = tools.read_file(state["workspace_path"], target)
+
+    # On a retry (review sent us back), original_content is already the *pristine*
+    # pre-edit version — don't re-read from disk, that would pick up our own last attempt.
+    if "original_content" in state:
+        original = state["original_content"]
+    else:
+        original = tools.read_file(state["workspace_path"], target)
+
+    retry_block = ""
+    if state.get("review_feedback"):
+        retry_block = (
+            "\nYour previous attempt:\n```\n" + state.get("new_content", "") + "\n```\n\n"
+            "An independent reviewer requested changes to that attempt:\n"
+            f"{state['review_feedback']}\n\n"
+            "Write a new, corrected version that addresses this feedback.\n"
+        )
 
     prompt = (
         f"Write the complete new contents of the file `{target}`.\n\n"
@@ -116,6 +131,7 @@ async def code(state: AgentState) -> dict:
             if original is not None
             else "This file does not exist yet — create it.\n\n"
         )
+        + retry_block
         + "Reply with ONLY the raw file contents. No explanation, no markdown code fences."
     )
     response = await llm.chat([LLMMessage(role="user", content=prompt)])
@@ -133,12 +149,78 @@ async def test(state: AgentState) -> dict:
     return {"test_passed": passed, "test_output": output}
 
 
+MAX_REVIEW_ROUNDS = 2
+
+
+async def review(state: AgentState) -> dict:
+    llm = get_llm_provider()
+    round_num = state.get("review_round", 0) + 1
+
+    if state.get("test_passed") is True:
+        test_status = "PASSED"
+    elif state.get("test_passed") is False:
+        test_status = "FAILED"
+    else:
+        test_status = "no tests found"
+
+    prompt = (
+        "You are an independent code reviewer. You did not write this change — a separate "
+        "Coding Agent did. Review it skeptically: does it actually satisfy the request, is it "
+        "correct, is it safe? Do not approve just to be agreeable. If the test result is "
+        "FAILED, you must request changes and list it as critical.\n\n"
+        f"Requested change: {state.get('change_description', '')}\n\n"
+        f"File: {state.get('target_file', '')}\n\n"
+        "Before:\n```\n" + (state.get("original_content") or "(new file)") + "\n```\n\n"
+        "After:\n```\n" + state.get("new_content", "") + "\n```\n\n"
+        f"Test result: {test_status}\n\n"
+        "Reply with ONLY a JSON object, no other text, shaped exactly like:\n"
+        '{"status": "APPROVED" or "CHANGES_REQUESTED", "critical": ["..."], '
+        '"warnings": ["..."], "suggestions": ["..."], "risk": "Low", "Medium", or "High"}'
+    )
+    response = await llm.chat([LLMMessage(role="user", content=prompt)])
+    parsed = _extract_json(response.content)
+
+    if not parsed:
+        # Can't parse the review — fail open rather than looping forever on a formatting hiccup.
+        # The human approval gate downstream is still the real safety net either way.
+        return {"review_status": "APPROVED", "review_feedback": "", "review_round": round_num}
+
+    status = str(parsed.get("status", "APPROVED")).upper()
+    if status not in ("APPROVED", "CHANGES_REQUESTED"):
+        status = "APPROVED"
+
+    lines = []
+    for item in parsed.get("critical") or []:
+        lines.append(f"Critical: {item}")
+    for item in parsed.get("warnings") or []:
+        lines.append(f"Warning: {item}")
+    for item in parsed.get("suggestions") or []:
+        lines.append(f"Suggestion: {item}")
+
+    return {
+        "review_status": status,
+        "review_feedback": "\n".join(lines),
+        "review_risk": parsed.get("risk", "Unknown"),
+        "review_round": round_num,
+    }
+
+
+def route_after_review(state: AgentState) -> str:
+    if state.get("review_status") == "CHANGES_REQUESTED" and state.get("review_round", 0) < MAX_REVIEW_ROUNDS:
+        return "code"
+    return "await_approval"
+
+
 def await_approval(state: AgentState) -> dict:
     summary = {
         "plan": state.get("plan", ""),
         "target_file": state.get("target_file", ""),
         "test_passed": state.get("test_passed"),
         "test_output": (state.get("test_output") or "")[-800:],
+        "review_status": state.get("review_status"),
+        "review_feedback": state.get("review_feedback", ""),
+        "review_risk": state.get("review_risk"),
+        "review_round": state.get("review_round", 0),
     }
     response = interrupt(summary)
     return {"approval_response": response}
@@ -196,6 +278,7 @@ def build_graph():
     graph.add_node("plan", plan)
     graph.add_node("code", code)
     graph.add_node("test", test)
+    graph.add_node("review", review)
     graph.add_node("await_approval", await_approval)
     graph.add_node("create_pr", create_pr)
 
@@ -204,7 +287,8 @@ def build_graph():
     graph.add_edge("chat_reply", END)
     graph.add_conditional_edges("plan", route_after_plan, {"code": "code", "end": END})
     graph.add_edge("code", "test")
-    graph.add_edge("test", "await_approval")
+    graph.add_edge("test", "review")
+    graph.add_conditional_edges("review", route_after_review, {"code": "code", "await_approval": "await_approval"})
     graph.add_edge("await_approval", "create_pr")
     graph.add_edge("create_pr", END)
 

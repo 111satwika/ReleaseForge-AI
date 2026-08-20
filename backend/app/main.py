@@ -49,10 +49,22 @@ def _format_approval_prompt(payload: dict) -> str:
     else:
         test_status = f"skipped — {payload.get('test_output', '')}"
 
+    review_block = ""
+    review_status = payload.get("review_status")
+    if review_status:
+        review_block = (
+            f"Review: {review_status} "
+            f"(risk: {payload.get('review_risk', 'Unknown')}, round {payload.get('review_round', 1)})\n"
+        )
+        if payload.get("review_feedback"):
+            review_block += payload["review_feedback"] + "\n"
+        review_block += "\n"
+
     return (
         f"Plan: {payload.get('plan')}\n"
         f"File: {payload.get('target_file')}\n"
         f"Tests: {test_status}\n\n"
+        f"{review_block}"
         "Reply 'approve' to push a branch and open a pull request, or anything else to stop here "
         "(the file change stays on disk, uncommitted)."
     )

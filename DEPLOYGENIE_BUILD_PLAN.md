@@ -68,10 +68,14 @@ Deliberately out of scope here (arrives in later phases): no re-planning if test
 
 **Also pulled forward from Phase 10:** the extension is now installed as a persistent VS Code extension (`vsce package` + `code --install-extension`, wrapped in a one-line `npm run release`) instead of only running via F5's Extension Development Host, and it auto-starts the backend itself (`extension/src/backendManager.ts`) — checks `/health`, spawns `uvicorn` if it isn't up, prompts once (folder picker) to locate the backend if unconfigured, then remembers the location in *user* (not workspace) settings so an untrusted repo's `.vscode/settings.json` can't redirect which Python binary gets launched.
 
-### Phase 2 — Independent Review Agent + reflection loop — **next**
-A separate LLM context/prompt from the Coding Agent (same-agent review misses its own blind spots). Adds the CHANGES_REQUESTED → fix → re-review branch in the graph — the design doc's first reflection pattern (Section 12).
+### Phase 2 — Independent Review Agent + reflection loop — **done**
+A `review` node sits between `test` and `await_approval` (`backend/app/agents/graph.py`). It's a separate LLM call with its own skeptical-reviewer prompt — not the Coding Agent grading its own work — that judges the diff against the request, factors in the real test result, and returns `APPROVED` or `CHANGES_REQUESTED` with critical/warning/suggestion feedback and a risk level, mirroring the design doc's Section 3.4 review-report format.
 
-### Phase 3 — Release Readiness + local Docker build
+On `CHANGES_REQUESTED`, the graph routes back to `code` with the reviewer's feedback appended to the prompt, then re-tests and re-reviews — the reflection loop from Section 12. This is capped at `MAX_REVIEW_ROUNDS = 2` so a stuck local model can't loop forever; after the cap, it still surfaces everything (failing tests, the review's critical feedback, risk level) in the approval prompt instead of quietly proceeding as if nothing were wrong. The review is explicitly instructed to request changes whenever the real test result is FAILED, rather than trusting the model's own read of the diff for that call.
+
+Verified against a fresh scratch repo: a normal request produced `APPROVED (risk: Low)` on the first pass; a deliberately broken request (rewriting `add` to multiply) produced a failing test, a `CHANGES_REQUESTED` verdict, a real loop back to `code`, a second failed attempt, and a correct stop at the round cap with the failure fully visible in the approval prompt — the small local model could not self-correct even with explicit feedback, which is a real, documented limitation rather than a bug to paper over. Declining after that left the repo untouched, as expected.
+
+### Phase 3 — Release Readiness + local Docker build — **next**
 A scoring agent (tests/review/security/build → GO/NO-GO) plus Dockerfile generation and a local image build. Introduces structured/numeric LLM output and a genuine human-in-the-loop approval gate (Section 13) before deployment complexity arrives.
 
 ### Phase 4 — Deployment Strategy + local Kubernetes + Validation/Monitoring/Recovery

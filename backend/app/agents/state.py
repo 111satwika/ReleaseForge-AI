@@ -18,6 +18,11 @@ class AgentState(TypedDict, total=False):
     test_passed: bool | None
     test_output: str
 
+    review_status: str  # "APPROVED" | "CHANGES_REQUESTED"
+    review_feedback: str
+    review_risk: str
+    review_round: int
+
     branch_name: str
     base_branch: str
     pr_url: str
