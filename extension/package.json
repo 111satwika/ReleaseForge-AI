@@ -3,6 +3,11 @@
   "displayName": "DeployGenie AI",
   "description": "Autonomous AI Release Engineering Platform",
   "version": "0.0.1",
+  "publisher": "deploygenie-local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/111satwika/ReleaseForge-AI.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
