@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import uuid
@@ -269,7 +270,9 @@ async def test(state: AgentState) -> dict:
     if command and not cached_command:
         await memory.remember_test_command(workspace, " ".join(command))
 
-    passed, output = tools.run_tests_with_command(workspace, command)
+    # Off the event loop: this blocks on a real subprocess for up to 90s, and would
+    # otherwise freeze the whole backend for every other request while it runs.
+    passed, output = await asyncio.to_thread(tools.run_tests_with_command, workspace, command)
     return {"test_passed": passed, "test_output": output}
 
 
@@ -314,29 +317,33 @@ async def publish(state: AgentState) -> dict:
     if len(description) > 72:
         description = description[:72].rsplit(" ", 1)[0] + "..."
 
+    # Every call below can block on a real git/network subprocess for up to 60s (see
+    # tools._run_git) — off the event loop, or the whole backend freezes for every
+    # other request (including health checks) while a single push runs.
     if state.get("branch_name"):
         # Retry: push a fix commit to the already-open PR's branch instead of opening a new one.
         commit_message = f"DeployGenie: fix per review — {description}"
-        pushed, log = tools.push_fix_commit(workspace, [target], commit_message)
+        pushed, log = await asyncio.to_thread(tools.push_fix_commit, workspace, [target], commit_message)
         if not pushed:
             return {"reply": f"Approved, but pushing the fix failed:\n\n{log}", "outcome": "publish_failed"}
         return {}
 
-    base_branch = tools.current_branch(workspace)
+    base_branch = await asyncio.to_thread(tools.current_branch, workspace)
     slug = re.sub(r"[^a-z0-9]+", "-", target.lower()).strip("-")[:40]
     branch_name = f"deploygenie/{slug}-{uuid.uuid4().hex[:6]}"
     commit_message = f"DeployGenie: {description}"
 
-    pushed, log = tools.commit_and_push(workspace, branch_name, [target], commit_message)
+    pushed, log = await asyncio.to_thread(tools.commit_and_push, workspace, branch_name, [target], commit_message)
     if not pushed:
         return {"reply": f"Approved, but `git push` failed:\n\n{log}", "outcome": "publish_failed"}
 
-    ok, pr_result = tools.open_pull_request(
+    ok, pr_result = await asyncio.to_thread(
+        tools.open_pull_request,
         workspace,
         branch_name,
         base_branch,
-        title=commit_message,
-        body=f"{state.get('plan', '')}\n\nOpened by DeployGenie, before independent review.",
+        commit_message,
+        f"{state.get('plan', '')}\n\nOpened by DeployGenie, before independent review.",
     )
     if ok:
         return {"branch_name": branch_name, "base_branch": base_branch, "pr_url": pr_result}
@@ -501,7 +508,9 @@ async def build_docker_image(state: AgentState) -> dict:
             content = fence.group(1)
         tools.write_file(workspace, "Dockerfile", content)
 
-        pushed, log = tools.push_fix_commit(workspace, ["Dockerfile"], "DeployGenie: add Dockerfile")
+        pushed, log = await asyncio.to_thread(
+            tools.push_fix_commit, workspace, ["Dockerfile"], "DeployGenie: add Dockerfile"
+        )
         generated_note = (
             "Generated a Dockerfile and added it to the PR.\n\n"
             if pushed
@@ -511,7 +520,8 @@ async def build_docker_image(state: AgentState) -> dict:
     branch_name = state.get("branch_name", "")
     tag_suffix = branch_name.split("/")[-1] if branch_name else "latest"
     tag = f"deploygenie-{tools.repo_name(workspace).lower().replace(' ', '-')}:{tag_suffix}"
-    ok, log = tools.run_docker_build(workspace, tag)
+    # Off the event loop: a real build can run for minutes (up to the 300s timeout).
+    ok, log = await asyncio.to_thread(tools.run_docker_build, workspace, tag)
 
     if ok:
         return {"reply": f"{generated_note}Docker image built: {tag}\n\nPR: {pr_url}", "outcome": "docker_built"}

@@ -76,6 +76,7 @@ def run_tests_with_command(
             cwd=workspace_path,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
             shell=False,
         )
@@ -91,8 +92,31 @@ def run_tests(workspace_path: str, timeout: int = 90) -> tuple[bool | None, str]
     return run_tests_with_command(workspace_path, detect_test_command(workspace_path), timeout)
 
 
-def _run_git(workspace_path: str, args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=workspace_path, capture_output=True, text=True)
+def _run_git(workspace_path: str, args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            # No terminal is ever attached to this process (it's spawned headlessly by
+            # the extension), so if git needs credentials it can't prompt for them —
+            # closing stdin makes credential helpers fail fast instead of hanging
+            # forever, which previously froze the entire backend (single event loop).
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=1,
+            stdout="",
+            stderr=(
+                f"git {' '.join(args)} timed out after {timeout}s — likely waiting on "
+                "credentials with no terminal attached to answer them. Set up a git "
+                "credential helper (or an SSH remote) so pushes don't need a prompt."
+            ),
+        )
 
 
 def current_branch(workspace_path: str) -> str:
@@ -139,12 +163,17 @@ def open_pull_request(
 ) -> tuple[bool, str]:
     """Prefers `gh pr create`; falls back to a GitHub compare URL if the CLI isn't installed."""
     if shutil.which("gh") is not None:
-        result = subprocess.run(
-            ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch, "--head", branch_name],
-            cwd=workspace_path,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch, "--head", branch_name],
+                cwd=workspace_path,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return False, "`gh pr create` timed out after 60s — check `gh auth status`."
         if result.returncode == 0:
             return True, result.stdout.strip()
         return False, (result.stdout + result.stderr).strip()
@@ -175,6 +204,7 @@ def run_docker_build(workspace_path: str, tag: str, timeout: int = 300) -> tuple
             cwd=workspace_path,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
         )
         output = (result.stdout or "") + (result.stderr or "")
