@@ -240,20 +240,25 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
 
     # A rollback gate resolving is the one place Phase 4's Recovery agent's root-cause
     # analysis exists at all — persist it here or it's gone the moment this response is
-    # sent, exactly the gap flagged and left open since Phase 5.
+    # sent, exactly the gap flagged and left open since Phase 5. Wrapped as one
+    # best-effort block, same reasoning as the RAG ingestion calls right above: this
+    # runs before the reply is returned to the caller (see /chat below), so a failure
+    # here must never take down an otherwise-successful response that's already fully
+    # computed — the one thing genuinely worth failing loudly for is record_release()
+    # itself, a few lines up, which every other outcome already depends on.
     if outcome in ("rolled_back", "declined_at_rollback"):
-        incident = await memory.record_incident(
-            workspace_path=workspace_path,
-            release_id=record.id,
-            deployment_strategy=values.get("deployment_strategy") or None,
-            action="rolled_back" if outcome == "rolled_back" else "left_as_is",
-            root_cause=values.get("recovery_analysis") or "(no root-cause analysis captured)",
-            deploy_log=values.get("deploy_log") or None,
-        )
         try:
+            incident = await memory.record_incident(
+                workspace_path=workspace_path,
+                release_id=record.id,
+                deployment_strategy=values.get("deployment_strategy") or None,
+                action="rolled_back" if outcome == "rolled_back" else "left_as_is",
+                root_cause=values.get("recovery_analysis") or "(no root-cause analysis captured)",
+                deploy_log=values.get("deploy_log") or None,
+            )
             await ingest_incident_record(get_llm_provider(), get_vector_store(), get_graph_store(), incident)
         except Exception:
-            logger.warning("Skipping incident-record ingestion — embedding call failed", exc_info=True)
+            logger.warning("Skipping incident-record persistence/ingestion", exc_info=True)
 
 
 @app.post("/chat")
