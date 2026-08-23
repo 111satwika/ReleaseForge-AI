@@ -42,6 +42,31 @@ interface AuditEvent {
   created_at: string;
 }
 
+interface Incident {
+  id: number;
+  workspace_path: string;
+  release_id: number | null;
+  deployment_strategy: string | null;
+  action: string;
+  root_cause: string;
+  created_at: string;
+}
+
+interface FaithfulnessResult {
+  faithful: boolean;
+  unsupported_claims: string[];
+  explanation: string;
+  passages_checked: number;
+}
+
+interface FaithfulnessCheckState {
+  question: string;
+  answer: string;
+  checking: boolean;
+  result?: FaithfulnessResult;
+  error?: string;
+}
+
 /**
  * A read-only "richer in-editor UI" surface (Phase 10) for the eval metrics (Phase 8)
  * and audit log (Phase 9) — both existed as real backend data with zero visibility
@@ -53,6 +78,7 @@ export class DashboardPanel {
   public static currentPanel: DashboardPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private faithfulnessState: FaithfulnessCheckState | undefined;
 
   public static show(extensionUri: vscode.Uri): void {
     if (DashboardPanel.currentPanel) {
@@ -76,6 +102,8 @@ export class DashboardPanel {
     this.panel.webview.onDidReceiveMessage((message) => {
       if (message.type === 'refresh') {
         void this.refresh();
+      } else if (message.type === 'checkFaithfulness') {
+        void this.checkFaithfulness(message.question ?? '', message.answer ?? '');
       }
     }, null, this.disposables);
     void this.refresh();
@@ -100,20 +128,62 @@ export class DashboardPanel {
       const folders = vscode.workspace.workspaceFolders;
       const workspacePath = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
       const workspaceQuery = workspacePath ? `?workspace_path=${encodeURIComponent(workspacePath)}` : '';
+      const workspaceParam = workspacePath ? `&workspace_path=${encodeURIComponent(workspacePath)}` : '';
 
       const [evalRes, auditRes] = await Promise.all([
         fetch(`${backendUrl}/eval/summary${workspaceQuery}`),
-        fetch(`${backendUrl}/audit/log?limit=25${workspacePath ? `&workspace_path=${encodeURIComponent(workspacePath)}` : ''}`),
+        fetch(`${backendUrl}/audit/log?limit=25${workspaceParam}`),
       ]);
       if (!evalRes.ok || !auditRes.ok) {
         throw new Error(`Backend returned ${evalRes.status}/${auditRes.status}`);
       }
       const evalSummary = (await evalRes.json()) as EvalSummary;
       const audit = (await auditRes.json()) as { events: AuditEvent[] };
-      this.panel.webview.html = this.getHtml(evalSummary, audit.events, workspacePath);
+
+      // /incidents requires workspace_path (there's no "across every repo" mode the way
+      // /eval/summary and /audit/log have) — nothing to fetch without an open folder.
+      let incidents: Incident[] = [];
+      if (workspacePath) {
+        const incidentsRes = await fetch(`${backendUrl}/incidents?limit=10${workspaceParam}`);
+        if (!incidentsRes.ok) {
+          throw new Error(`Backend returned ${incidentsRes.status} for /incidents`);
+        }
+        incidents = ((await incidentsRes.json()) as { incidents: Incident[] }).incidents;
+      }
+
+      this.panel.webview.html = this.getHtml(evalSummary, audit.events, incidents, workspacePath, this.faithfulnessState);
     } catch (err) {
       this.panel.webview.html = this.getErrorHtml(`Couldn't reach the ReleaseForge backend at ${backendUrl}. (${err})`);
     }
+  }
+
+  private async checkFaithfulness(question: string, answer: string): Promise<void> {
+    const backendUrl = vscode.workspace.getConfiguration('releaseforge').get<string>('backendUrl');
+    if (!question.trim() || !answer.trim()) {
+      return;
+    }
+    this.faithfulnessState = { question, answer, checking: true };
+    await this.refresh(); // re-render immediately so "Checking…" shows before the (potentially slow) call below
+
+    try {
+      const backendUp = await ensureBackendRunning();
+      if (!backendUp) {
+        throw new Error("the backend isn't running");
+      }
+      const res = await fetch(`${backendUrl}/eval/faithfulness`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer }),
+      });
+      if (!res.ok) {
+        throw new Error(`backend returned ${res.status}`);
+      }
+      const result = (await res.json()) as FaithfulnessResult;
+      this.faithfulnessState = { question, answer, checking: false, result };
+    } catch (err) {
+      this.faithfulnessState = { question, answer, checking: false, error: String(err) };
+    }
+    await this.refresh();
   }
 
   private getErrorHtml(message: string): string {
@@ -128,7 +198,13 @@ export class DashboardPanel {
     </body></html>`;
   }
 
-  private getHtml(evalSummary: EvalSummary, events: AuditEvent[], workspacePath: string | undefined): string {
+  private getHtml(
+    evalSummary: EvalSummary,
+    events: AuditEvent[],
+    incidents: Incident[],
+    workspacePath: string | undefined,
+    faithfulness: FaithfulnessCheckState | undefined,
+  ): string {
     const tiles = [
       { label: 'Task completion', value: evalSummary.agent.completion_rate, sub: `${evalSummary.agent.completed} of ${evalSummary.agent.total_tasks} tasks` },
       { label: 'Test pass rate', value: evalSummary.coding.test_pass_rate, sub: `${evalSummary.coding.tests_passed} of ${evalSummary.coding.tests_run} runs` },
@@ -158,6 +234,20 @@ export class DashboardPanel {
         </tr>`;
       })
       .join('');
+
+    const incidentRows = incidents
+      .map((i) => {
+        const time = new Date(i.created_at).toLocaleString();
+        return `<tr>
+          <td class="dim">${escapeHtml(time)}</td>
+          <td>${escapeHtml(i.deployment_strategy ?? '—')}</td>
+          <td>${actionPill(i.action)}</td>
+          <td>${escapeHtml(i.root_cause)}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const faithfulnessResultHtml = renderFaithfulnessResult(faithfulness);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -233,6 +323,42 @@ export class DashboardPanel {
   .pill.error .dot { background: var(--vscode-charts-red, #f14c4c); }
   .pill.scope_denied { color: var(--vscode-charts-yellow, #cca700); }
   .pill.scope_denied .dot { background: var(--vscode-charts-yellow, #cca700); }
+  .pill.rolled_back { color: var(--vscode-charts-red, #f14c4c); }
+  .pill.rolled_back .dot { background: var(--vscode-charts-red, #f14c4c); }
+  .pill.left_as_is { color: var(--vscode-charts-yellow, #cca700); }
+  .pill.left_as_is .dot { background: var(--vscode-charts-yellow, #cca700); }
+  .pill.faithful { color: var(--vscode-charts-green, #3fb950); }
+  .pill.faithful .dot { background: var(--vscode-charts-green, #3fb950); }
+  .pill.not-faithful { color: var(--vscode-charts-red, #f14c4c); }
+  .pill.not-faithful .dot { background: var(--vscode-charts-red, #f14c4c); }
+  .check-form { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+  .check-form label { font-size: 0.82em; color: var(--vscode-descriptionForeground); }
+  .check-form textarea, .check-form input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 0.9em;
+    resize: vertical;
+  }
+  .check-form button {
+    align-self: flex-start;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 0.85em;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .check-form button:hover { background: var(--vscode-button-hoverBackground); }
+  .check-form button:disabled { opacity: 0.6; cursor: default; }
+  .check-result { margin-top: 6px; font-size: 0.88em; }
+  .check-result .claims { margin: 6px 0 0; padding-left: 18px; }
+  .check-result .explanation { color: var(--vscode-descriptionForeground); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -267,10 +393,37 @@ export class DashboardPanel {
       : '<div class="empty">No MCP tool calls recorded yet.</div>'}
   </section>
 
+  <section>
+    <h2>Recent incidents</h2>
+    ${incidentRows
+      ? `<table><thead><tr><th>Time</th><th>Strategy</th><th>Action</th><th>Root cause</th></tr></thead><tbody>${incidentRows}</tbody></table>`
+      : `<div class="empty">${workspacePath ? 'No rollbacks recorded yet.' : 'Open a repo to see its incident history.'}</div>`}
+  </section>
+
+  <section>
+    <h2>Faithfulness check</h2>
+    <p class="subtitle" style="margin: 0 0 10px;">Ask a real question this chat could receive, paste in an answer, and check whether it's actually supported by what ReleaseForge would have retrieved for it — the same check <code>POST /eval/faithfulness</code> runs.</p>
+    <form class="check-form" id="faithfulness-form">
+      <label for="ff-question">Question</label>
+      <input id="ff-question" type="text" value="${escapeHtml(faithfulness?.question ?? '')}" placeholder="e.g. what vector database does hybrid retrieval use?" />
+      <label for="ff-answer">Answer to check</label>
+      <textarea id="ff-answer" rows="3" placeholder="Paste the answer you want fact-checked against retrieved passages">${escapeHtml(faithfulness?.answer ?? '')}</textarea>
+      <button type="submit" id="ff-submit" ${faithfulness?.checking ? 'disabled' : ''}>${faithfulness?.checking ? 'Checking…' : 'Check faithfulness'}</button>
+    </form>
+    ${faithfulnessResultHtml}
+  </section>
+
 <script>
   const vscode = acquireVsCodeApi();
   document.getElementById('refresh').addEventListener('click', () => {
     vscode.postMessage({ type: 'refresh' });
+  });
+  document.getElementById('faithfulness-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const question = document.getElementById('ff-question').value;
+    const answer = document.getElementById('ff-answer').value;
+    document.getElementById('ff-submit').disabled = true;
+    vscode.postMessage({ type: 'checkFaithfulness', question, answer });
   });
 </script>
 </body>
@@ -295,6 +448,36 @@ function statusPill(status: string): string {
   const labels: Record<string, string> = { ok: 'OK', error: 'Error', scope_denied: 'Scope denied' };
   const cls = ['ok', 'error', 'scope_denied'].includes(status) ? status : 'error';
   return `<span class="pill ${cls}"><span class="dot"></span>${escapeHtml(labels[status] ?? status)}</span>`;
+}
+
+function actionPill(action: string): string {
+  const labels: Record<string, string> = { rolled_back: 'Rolled back', left_as_is: 'Left as-is' };
+  const cls = action === 'rolled_back' ? 'rolled_back' : 'left_as_is';
+  return `<span class="pill ${cls}"><span class="dot"></span>${escapeHtml(labels[action] ?? action)}</span>`;
+}
+
+function renderFaithfulnessResult(state: FaithfulnessCheckState | undefined): string {
+  if (!state || state.checking) {
+    return '';
+  }
+  if (state.error) {
+    return `<div class="check-result">Couldn't run the check: ${escapeHtml(state.error)}</div>`;
+  }
+  if (!state.result) {
+    return '';
+  }
+  const { faithful, unsupported_claims, explanation, passages_checked } = state.result;
+  const pill = faithful
+    ? '<span class="pill faithful"><span class="dot"></span>Faithful</span>'
+    : '<span class="pill not-faithful"><span class="dot"></span>Not faithful</span>';
+  const claims = unsupported_claims.length
+    ? `<ul class="claims">${unsupported_claims.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`
+    : '';
+  return `<div class="check-result">
+    ${pill} <span class="dim">(checked against ${passages_checked} retrieved passage${passages_checked === 1 ? '' : 's'})</span>
+    ${claims}
+    <div class="explanation">${escapeHtml(explanation)}</div>
+  </div>`;
 }
 
 function escapeHtml(value: string): string {
