@@ -339,6 +339,23 @@ Asked directly, after the gap audit above, to implement everything still open �
 
 ---
 
+## Round 3 — the guided items, worked through with the user directly
+
+Five remaining items from the same gap list genuinely need a human involved — a browser OAuth flow, eyes on a real GUI window, credentials only the user can provision. Worked through one at a time rather than attempted silently.
+
+**GPU check — a real, negative, useful answer.** `Get-CimInstance Win32_VideoController` shows this machine has Intel UHD Graphics 620 + Intel Iris Xe Graphics only — no NVIDIA or AMD discrete GPU. Ollama's official builds support NVIDIA CUDA and AMD ROCm acceleration; Intel GPU acceleration isn't available in the stock Ollama distribution installed here (only via unofficial forks like IPEX-LLM, a different build entirely, not attempted). `Get-CimInstance Win32_Processor` shows a 4-core/8-thread 11th Gen Intel i7-1195G7, and `ollama ps` already reports 100% CPU for both loaded models — meaning Ollama is already using all the CPU it can, and there's no GPU here for it to offload to even if the software supported it. **Conclusion: the CPU-only inference speed documented throughout this project (90–250s per real LLM call) is a genuine hardware ceiling on this specific machine, not a missed configuration.** The one real lever left is a smaller/faster quantized model, a real quality-for-speed trade-off rather than a fix — not applied without being asked, since it would change every LLM call's behavior project-wide.
+
+**The full VS Code Extension Development Host — the single biggest standing honesty caveat in this entire project, closed for real.** Every earlier UI claim in this document had the same footnote: "verified via a faithful Playwright reproduction, not a real Extension Development Host, because no GUI session was launchable from here." This machine *does* have a real desktop (this whole session runs inside a VS Code extension host itself) — what was missing was a way to launch a *second*, real VS Code window and have a human look at it. `code --extensionDevelopmentPath=.../extension --new-window .../ReleaseForge-AI` does exactly that, and the user confirmed, live, in their own words at each step:
+- A real `[Extension Development Host]` window opened with the ReleaseForge sidebar icon and chat panel visible.
+- The chat panel connected to a real backend (`ensureBackendRunning()` + `fetch()`, the exact code path that was previously only unit-testable in isolation).
+- The Dashboard opened, at first with a genuine, live-only-discoverable bug (below) — then, once fixed, rendered real KPI tiles, tables, and — confirmed separately — both of today's new sections (the incidents table, the faithfulness-check form) exactly as designed.
+
+**A real bug this verification caught, that no test in this project's suite ever could have.** `backendManager.ts`'s `ensureBackendRunning()` gave up waiting for the backend to finish starting after 30 seconds and reported "couldn't be started automatically" — but the spawned process was still alive and finished starting shortly after, confirmed directly: `Get-CimInstance Win32_Process` showed the uvicorn process and all four of its MCP subprocess children genuinely running, and `curl http://127.0.0.1:8420/health` answered `{"status":"ok"}` moments after the timeout had already given up on it. This project's own live testing has repeatedly observed 45–90s+ startup times on this machine (four real MCP subprocess handshakes plus doc ingestion) — the 30s window was already tight before today's fourth MCP server (`observability_server.py`) made it worse. No `TestClient`-based test would ever catch this: those don't go through `ensureBackendRunning()`'s spawn-and-poll logic at all, only a real extension host launching a real process does. Fixed by raising the window to 120s. Recompiled clean; the user confirmed live afterward that the already-spawned (and by-then genuinely healthy) backend answered immediately, and the Dashboard — including both new sections — rendered correctly.
+
+**What's still honestly not covered:** the approval-buttons chat flow (typing a task, clicking Approve, watching a real diff come back) wasn't exercised in this live pass — the verification above focused on the two things every earlier phase had explicitly flagged as unconfirmed (real backend connection, real Dashboard rendering). A full click-through of the approval flow in a real editor remains a small, honest, remaining step.
+
+---
+
 ## Concept coverage
 
 Every phase maps back to the design doc's Section 22 checklist — nothing in the original vision is dropped, only reordered:

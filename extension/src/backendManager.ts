@@ -106,7 +106,15 @@ export async function ensureBackendRunning(): Promise<boolean> {
   return vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Starting ReleaseForge backend…' },
     async () => {
-      for (let attempt = 0; attempt < 30; attempt++) {
+      // 120s, not 30s — found live, not guessed: lifespan spawns four real MCP
+      // subprocess servers (filesystem/docker/kubernetes/observability) and does a full
+      // handshake with each before /health can ever answer, and on this machine that
+      // alone took 45-90s+ during this project's own live testing, before counting doc
+      // re-ingestion on top. A real backend that's genuinely still starting up used to
+      // get reported as "couldn't be started automatically" well before it was actually
+      // done — confirmed directly: the process was alive and /health answered fine only
+      // moments after this timeout would have already given up on it.
+      for (let attempt = 0; attempt < 120; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         if (await checkHealth(backendUrl)) {
           return true;
