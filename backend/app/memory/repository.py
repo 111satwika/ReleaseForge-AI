@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.memory.db import SessionLocal
-from app.memory.models import ProjectMemory, ReleaseRecord
+from app.memory.models import IncidentRecord, ProjectMemory, ReleaseRecord
 
 
 async def get_cached_test_command(workspace_path: str) -> str | None:
@@ -35,6 +35,26 @@ async def recent_releases(workspace_path: str, limit: int = 5) -> list[ReleaseRe
             select(ReleaseRecord)
             .where(ReleaseRecord.workspace_path == workspace_path)
             .order_by(ReleaseRecord.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars())
+
+
+async def record_incident(**fields) -> IncidentRecord:
+    async with SessionLocal() as session:
+        record = IncidentRecord(**fields)
+        session.add(record)
+        await session.commit()
+        await session.refresh(record)
+        return record
+
+
+async def recent_incidents(workspace_path: str, limit: int = 5) -> list[IncidentRecord]:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(IncidentRecord)
+            .where(IncidentRecord.workspace_path == workspace_path)
+            .order_by(IncidentRecord.created_at.desc())
             .limit(limit)
         )
         return list(result.scalars())

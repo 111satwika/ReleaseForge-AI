@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 
 from app.llm.base import LLMProvider
-from app.rag.chunking import Chunk, chunk_markdown, chunk_release_record
+from app.rag.chunking import Chunk, chunk_incident_record, chunk_markdown, chunk_release_record
 from app.rag.graph_store import GraphStore
 from app.rag.vector_store import VectorStore
 
@@ -57,3 +57,14 @@ async def ingest_release_record(
     chunk = chunk_release_record(record)
     await _embed_and_store(llm, vector_store, [chunk])
     await asyncio.to_thread(graph_store.upsert_release, record)
+
+
+async def ingest_incident_record(
+    llm: LLMProvider, vector_store: VectorStore, graph_store: GraphStore, record
+) -> None:
+    """Same shape as ingest_release_record, called right after a rollback gate resolves
+    (main.py's `_maybe_record_release`) — the root-cause analysis becomes retrievable in
+    chat and joins the relationship graph immediately."""
+    chunk = chunk_incident_record(record)
+    await _embed_and_store(llm, vector_store, [chunk])
+    await asyncio.to_thread(graph_store.upsert_incident, record)

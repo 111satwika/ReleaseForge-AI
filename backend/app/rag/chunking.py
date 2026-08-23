@@ -104,3 +104,30 @@ def chunk_release_record(record) -> Chunk:
             "target_file": record.target_file or "",
         },
     )
+
+
+def chunk_incident_record(record) -> Chunk:
+    """One rollback event -> one chunk, same reasoning as chunk_release_record: already
+    small, so no further splitting. Makes a past root cause answerable in chat ("why did
+    the last deploy roll back") instead of existing only as a one-time reply."""
+    lines = [
+        f"Incident in {record.workspace_path}",
+        f"Action taken: {record.action}",
+    ]
+    if record.deployment_strategy:
+        lines.append(f"Deployment strategy: {record.deployment_strategy}")
+    lines.append(f"Root cause: {record.root_cause}")
+    lines.append(f"When: {record.created_at.isoformat()}")
+
+    text = "\n".join(lines)
+    return Chunk(
+        id=f"incident-history:{record.id}",
+        text=text,
+        source="incident-history",
+        metadata={
+            "workspace_path": record.workspace_path,
+            "incident_id": record.id,
+            "release_id": record.release_id or "",
+            "action": record.action,
+        },
+    )

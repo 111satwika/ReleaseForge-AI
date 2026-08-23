@@ -89,6 +89,23 @@ class GraphStore:
         finally:
             conn.close()
 
+    def upsert_incident(self, record) -> None:
+        """Called once per rollback event (mirrors upsert_release). Builds:
+        Release -[CAUSED]-> Incident — the design doc's fuller ... -> Deployment ->
+        Incident chain, previously unbuildable simply because no incident data existed
+        anywhere to link. release_id is only set when the triggering ReleaseRecord is
+        known, so the edge is skipped (not fabricated) if it isn't."""
+        incident_id = f"incident:{record.workspace_path}:{record.id}"
+        conn = self._connect()
+        try:
+            self._upsert_node(conn, incident_id, "Incident", f"{record.action} @ {record.created_at.isoformat()}")
+            if record.release_id is not None:
+                release_id_str = f"release:{record.workspace_path}:{record.release_id}"
+                self._add_edge(conn, release_id_str, "CAUSED", incident_id, record.workspace_path, record.release_id)
+            conn.commit()
+        finally:
+            conn.close()
+
     def releases_touching_file(self, workspace_path: str, target_file: str, limit: int = 10) -> list[dict]:
         """Which past releases touched this exact file — e.g. "who last changed login.py
         and what happened"."""

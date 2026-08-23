@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.rag.chunking import Chunk, chunk_markdown, chunk_release_record
+from app.rag.chunking import Chunk, chunk_incident_record, chunk_markdown, chunk_release_record
 from app.rag.graph_store import GraphStore
 from app.rag.keyword_store import KeywordStore
 from app.rag.retriever import hybrid_retrieve
@@ -86,6 +86,26 @@ def test_chunk_release_record_contains_key_facts():
     assert chunk.source == "release-history"
 
 
+class _FakeIncident:
+    def __init__(self, **kwargs):
+        self.id = kwargs.get("id", 1)
+        self.workspace_path = kwargs.get("workspace_path", "/repo")
+        self.release_id = kwargs.get("release_id", 5)
+        self.deployment_strategy = kwargs.get("deployment_strategy", "Canary")
+        self.action = kwargs.get("action", "rolled_back")
+        self.root_cause = kwargs.get("root_cause", "The image tag didn't exist, so the pod never started.")
+        self.created_at = kwargs.get("created_at", datetime(2026, 8, 21, tzinfo=timezone.utc))
+
+
+def test_chunk_incident_record_contains_root_cause():
+    record = _FakeIncident()
+    chunk = chunk_incident_record(record)
+    assert "image tag didn't exist" in chunk.text
+    assert "Canary" in chunk.text
+    assert chunk.metadata["action"] == "rolled_back"
+    assert chunk.source == "incident-history"
+
+
 # ---------- vector + keyword + hybrid retrieval ----------
 
 
@@ -152,3 +172,25 @@ def test_graph_store_is_idempotent_on_same_release(tmp_path):
     facts = graph.recent_relationships("/repo", limit=100)
     modified_edges = [f for f in facts if f["relation"] == "MODIFIED"]
     assert len(modified_edges) == 1
+
+
+def test_graph_store_links_incident_to_its_release(tmp_path):
+    graph = GraphStore(db_path=tmp_path / "graph_incident.db")
+    release = _FakeRecord(id=3, target_file="deploy.yaml")
+    graph.upsert_release(release)
+    incident = _FakeIncident(id=1, release_id=3)
+    graph.upsert_incident(incident)
+
+    facts = graph.recent_relationships("/repo", limit=100)
+    caused_edges = [f for f in facts if f["relation"] == "CAUSED"]
+    assert len(caused_edges) == 1
+    assert "rolled_back" in caused_edges[0]["to"]
+
+
+def test_graph_store_skips_incident_edge_without_a_known_release(tmp_path):
+    graph = GraphStore(db_path=tmp_path / "graph_incident_orphan.db")
+    incident = _FakeIncident(id=2, release_id=None)
+    graph.upsert_incident(incident)  # must not raise even with nothing to link to
+
+    facts = graph.recent_relationships("/repo", limit=100)
+    assert not any(f["relation"] == "CAUSED" for f in facts)

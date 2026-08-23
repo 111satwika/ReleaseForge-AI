@@ -62,6 +62,28 @@ class ReleaseRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class IncidentRecord(Base):
+    """One row per rollback event — the root-cause analysis Phase 4's Recovery agent
+    already produces on every failed deployment, actually persisted instead of shown
+    once in a chat reply and discarded. Closes a gap Phase 5 flagged and never built:
+    at the time, Phase 4's Recovery agent didn't exist yet to produce this data at all."""
+
+    __tablename__ = "incident_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_path: Mapped[str] = mapped_column(String, index=True)
+    release_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    deployment_strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+    # "rolled_back" | "left_as_is" — matches the two ways await_rollback_approval's gate
+    # can resolve (rollback() vs. declined_at_rollback()).
+    action: Mapped[str] = mapped_column(String)
+    root_cause: Mapped[str] = mapped_column(String)
+    deploy_log: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
 class AuditLog(Base):
     """One row per MCP tool call this backend ever attempted — the design doc's Section
     14 "audit logs" requirement, made real. Every attempt is recorded, not just

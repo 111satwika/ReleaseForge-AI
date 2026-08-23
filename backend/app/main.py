@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.agents.graph import build_graph, is_affirmative
 from app.eval.metrics import evaluate_platform
+from app.eval.rag_eval import judge_faithfulness
 from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
 from app.mcp.factory import start_mcp_client, stop_mcp_client
@@ -18,7 +19,8 @@ from app.memory import repository as memory
 from app.memory.db import init_db
 from app.observability.tracing import get_tracer, record_exception, setup_tracing
 from app.rag.factory import get_graph_store, get_vector_store
-from app.rag.ingest import ingest_project_docs, ingest_release_record
+from app.rag.ingest import ingest_incident_record, ingest_project_docs, ingest_release_record
+from app.rag.retriever import hybrid_retrieve
 from app.security.audit import recent_audit_events
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,11 @@ class PingRequest(BaseModel):
     message: str = "Say hello in one short sentence."
 
 
+class FaithfulnessCheckRequest(BaseModel):
+    question: str
+    answer: str
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -105,6 +112,26 @@ async def eval_summary(workspace_path: str | None = None):
         "agent": asdict(report["agent"]),
         "coding": asdict(report["coding"]),
         "deployment": asdict(report["deployment"]),
+    }
+
+
+@app.post("/eval/faithfulness")
+async def eval_faithfulness(req: FaithfulnessCheckRequest):
+    """Design doc Section 16's faithfulness metric, the one rag_eval.py originally
+    didn't attempt — closed after a real, live-observed retrieval-was-right-but-the-
+    answer-still-drifted case (see the Phase 6 build-plan addendum). Re-retrieves the
+    same passages chat_reply() would have used for this question, then asks the LLM to
+    check the given answer against them — so this checks a real answer against real
+    retrieval, not a fabricated pair."""
+    llm = get_llm_provider()
+    hits = await hybrid_retrieve(req.question, llm.embed, get_vector_store(), k=4)
+    passages = [h["text"] for h in hits]
+    result = await judge_faithfulness(llm, req.question, req.answer, passages)
+    return {
+        "faithful": result.faithful,
+        "unsupported_claims": result.unsupported_claims,
+        "explanation": result.explanation,
+        "passages_checked": len(passages),
     }
 
 
@@ -128,6 +155,28 @@ async def audit_log(limit: int = 100, workspace_path: str | None = None):
                 "created_at": e.created_at.isoformat(),
             }
             for e in events
+        ]
+    }
+
+
+@app.get("/incidents")
+async def incidents(workspace_path: str, limit: int = 20):
+    """Closes the "incident memory" gap flagged since Phase 5: every rollback's real
+    root-cause analysis (Phase 4's Recovery agent), actually queryable now instead of
+    existing only once, in the chat reply that first showed it."""
+    records = await memory.recent_incidents(workspace_path, limit=limit)
+    return {
+        "incidents": [
+            {
+                "id": r.id,
+                "workspace_path": r.workspace_path,
+                "release_id": r.release_id,
+                "deployment_strategy": r.deployment_strategy,
+                "action": r.action,
+                "root_cause": r.root_cause,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in records
         ]
     }
 
@@ -188,6 +237,23 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
         await ingest_release_record(get_llm_provider(), get_vector_store(), get_graph_store(), record)
     except Exception:
         logger.warning("Skipping release-record ingestion — embedding call failed", exc_info=True)
+
+    # A rollback gate resolving is the one place Phase 4's Recovery agent's root-cause
+    # analysis exists at all — persist it here or it's gone the moment this response is
+    # sent, exactly the gap flagged and left open since Phase 5.
+    if outcome in ("rolled_back", "declined_at_rollback"):
+        incident = await memory.record_incident(
+            workspace_path=workspace_path,
+            release_id=record.id,
+            deployment_strategy=values.get("deployment_strategy") or None,
+            action="rolled_back" if outcome == "rolled_back" else "left_as_is",
+            root_cause=values.get("recovery_analysis") or "(no root-cause analysis captured)",
+            deploy_log=values.get("deploy_log") or None,
+        )
+        try:
+            await ingest_incident_record(get_llm_provider(), get_vector_store(), get_graph_store(), incident)
+        except Exception:
+            logger.warning("Skipping incident-record ingestion — embedding call failed", exc_info=True)
 
 
 @app.post("/chat")
