@@ -43,6 +43,7 @@ class AgentState(TypedDict, total=False):
     deploy_color: str  # only meaningful for Blue-Green: "blue" | "green" (the NEW color just deployed)
     deploy_applied: bool | None
     deploy_log: str
+    deploy_started_at: str  # ISO timestamp stamped at the top of deploy() — the piece a real MTTR metric needed
 
     validation_passed: bool | None
     monitor_summary: str

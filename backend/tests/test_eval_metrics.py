@@ -1,9 +1,11 @@
 """Unit tests for the pure metric-computation half of app/eval/metrics.py — no database
-needed, just hand-built records with the same shape ReleaseRecord rows have."""
+needed, just hand-built records with the same shape ReleaseRecord/IncidentRecord rows
+have."""
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
-from app.eval.metrics import compute_agent_metrics, compute_coding_metrics, compute_deployment_metrics
+from app.eval.metrics import compute_agent_metrics, compute_coding_metrics, compute_deployment_metrics, compute_mttr_seconds
 
 
 @dataclass
@@ -90,3 +92,42 @@ def test_deployment_metrics_groups_missing_strategy_as_unknown():
     records = [FakeRecord(outcome="deployed", deployment_strategy=None)]
     metrics = compute_deployment_metrics(records)
     assert metrics.strategy_breakdown["unknown"]["attempted"] == 1
+
+
+@dataclass
+class FakeIncident:
+    created_at: datetime
+    deploy_started_at: datetime | None
+
+
+def test_mttr_is_none_with_no_incidents():
+    assert compute_mttr_seconds([]) is None
+
+
+def test_mttr_averages_real_recovery_durations():
+    base = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
+    incidents = [
+        FakeIncident(created_at=base + timedelta(seconds=90), deploy_started_at=base),
+        FakeIncident(created_at=base + timedelta(seconds=30), deploy_started_at=base),
+    ]
+    assert compute_mttr_seconds(incidents) == 60.0  # (90 + 30) / 2
+
+
+def test_mttr_excludes_incidents_with_no_deploy_started_at_instead_of_treating_as_zero():
+    """An incident recorded before deploy_started_at existed has it as None — must be
+    excluded outright, not silently counted as an instant 0-second recovery, which would
+    quietly drag the average down and misrepresent real recovery speed."""
+    base = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
+    incidents = [
+        FakeIncident(created_at=base + timedelta(seconds=100), deploy_started_at=base),
+        FakeIncident(created_at=base, deploy_started_at=None),
+    ]
+    assert compute_mttr_seconds(incidents) == 100.0  # not (100 + 0) / 2 == 50.0
+
+
+def test_deployment_metrics_includes_mttr_when_incidents_are_passed():
+    base = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
+    records = [FakeRecord(outcome="rolled_back", deployment_strategy="Rolling")]
+    incidents = [FakeIncident(created_at=base + timedelta(seconds=45), deploy_started_at=base)]
+    metrics = compute_deployment_metrics(records, incidents)
+    assert metrics.mean_time_to_recovery_seconds == 45.0

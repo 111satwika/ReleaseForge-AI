@@ -6,6 +6,7 @@ langgraph>=1.2
 langgraph-checkpoint-sqlite>=3.1
 sqlalchemy>=2.0
 aiosqlite>=0.20
+alembic>=1.13
 chromadb>=0.5
 rank-bm25>=0.2
 pyyaml>=6.0

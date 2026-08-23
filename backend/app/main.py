@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -20,7 +21,7 @@ from app.memory.db import init_db
 from app.observability.tracing import get_tracer, record_exception, setup_tracing
 from app.rag.factory import get_graph_store, get_vector_store
 from app.rag.ingest import ingest_incident_record, ingest_project_docs, ingest_release_record
-from app.rag.retriever import hybrid_retrieve
+from app.rag.reranker import hybrid_retrieve_reranked
 from app.security.audit import recent_audit_events
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ async def eval_faithfulness(req: FaithfulnessCheckRequest):
     check the given answer against them — so this checks a real answer against real
     retrieval, not a fabricated pair."""
     llm = get_llm_provider()
-    hits = await hybrid_retrieve(req.question, llm.embed, get_vector_store(), k=4)
+    hits = await hybrid_retrieve_reranked(req.question, llm.embed, llm.chat, get_vector_store(), k=4, fetch_k=10)
     passages = [h["text"] for h in hits]
     result = await judge_faithfulness(llm, req.question, req.answer, passages)
     return {
@@ -248,6 +249,7 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
     # itself, a few lines up, which every other outcome already depends on.
     if outcome in ("rolled_back", "declined_at_rollback"):
         try:
+            deploy_started_at_raw = values.get("deploy_started_at")
             incident = await memory.record_incident(
                 workspace_path=workspace_path,
                 release_id=record.id,
@@ -255,6 +257,7 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
                 action="rolled_back" if outcome == "rolled_back" else "left_as_is",
                 root_cause=values.get("recovery_analysis") or "(no root-cause analysis captured)",
                 deploy_log=values.get("deploy_log") or None,
+                deploy_started_at=datetime.fromisoformat(deploy_started_at_raw) if deploy_started_at_raw else None,
             )
             await ingest_incident_record(get_llm_provider(), get_vector_store(), get_graph_store(), incident)
         except Exception:

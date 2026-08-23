@@ -54,6 +54,7 @@ SERVER_MODULES = {
     "filesystem": "app.mcp_servers.filesystem_server",
     "docker": "app.mcp_servers.docker_server",
     "kubernetes": "app.mcp_servers.kubernetes_server",
+    "observability": "app.mcp_servers.observability_server",
 }
 
 
@@ -69,6 +70,8 @@ class MCPClientManager:
         self._stack: AsyncExitStack | None = None
         self._sessions: dict[str, ClientSession] = {}
         self._tool_index: dict[str, str] = {}  # tool name -> owning server name
+        self._resource_index: dict[str, str] = {}  # resource uri -> owning server name
+        self._prompt_index: dict[str, str] = {}  # prompt name -> owning server name
 
     async def start(self) -> None:
         self._stack = AsyncExitStack()
@@ -85,11 +88,25 @@ class MCPClientManager:
             for tool in discovered.tools:
                 self._tool_index[tool.name] = server_name
 
+            # Genuine discovery, same principle as tools above — not every server
+            # exposes Resources/Prompts (filesystem/docker/kubernetes don't; only the
+            # observability server does), so these come back empty for most servers,
+            # which is fine: the index just won't have entries for them.
+            discovered_resources = await session.list_resources()
+            for resource in discovered_resources.resources:
+                self._resource_index[str(resource.uri)] = server_name
+
+            discovered_prompts = await session.list_prompts()
+            for prompt in discovered_prompts.prompts:
+                self._prompt_index[prompt.name] = server_name
+
     async def stop(self) -> None:
         if self._stack is not None:
             await self._stack.aclose()
         self._sessions.clear()
         self._tool_index.clear()
+        self._resource_index.clear()
+        self._prompt_index.clear()
 
     async def call_tool(
         self, role: str, tool_name: str, arguments: dict
@@ -138,3 +155,44 @@ class MCPClientManager:
         """tool name -> owning server name, for anything that wants to show what's
         discoverable (e.g. a debug endpoint) without hardcoding the server layout."""
         return dict(self._tool_index)
+
+    def available_resources(self) -> dict[str, str]:
+        """resource uri -> owning server name."""
+        return dict(self._resource_index)
+
+    def available_prompts(self) -> dict[str, str]:
+        """prompt name -> owning server name."""
+        return dict(self._prompt_index)
+
+    async def read_resource(self, uri: str) -> dict | list | str:
+        """No role/scope check here, unlike call_tool() — these are read-only
+        observability data with no side effect and no secret-shaped content (unlike
+        filesystem's read_file, which does guard against sensitive paths), the same
+        security posture the equivalent /eval/summary and /audit/log HTTP endpoints
+        already have with no auth layer of their own."""
+        server_name = self._resource_index.get(uri)
+        if server_name is None:
+            raise ValueError(f"No MCP server exposes a resource at '{uri}'. Known resources: {sorted(self._resource_index)}")
+        session = self._sessions[server_name]
+        result = await session.read_resource(uri)
+        text = "\n".join(c.text for c in result.contents if hasattr(c, "text"))
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
+    async def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> str:
+        """Returns the rendered prompt text — the same tolerant "just give me the
+        string" shape a caller building an LLMMessage from this would actually want,
+        not the SDK's full multi-message envelope."""
+        server_name = self._prompt_index.get(name)
+        if server_name is None:
+            raise ValueError(f"No MCP server exposes a prompt named '{name}'. Known prompts: {sorted(self._prompt_index)}")
+        session = self._sessions[server_name]
+        result = await session.get_prompt(name, arguments or {})
+        texts = []
+        for message in result.messages:
+            content = message.content
+            if hasattr(content, "text"):
+                texts.append(content.text)
+        return "\n".join(texts)

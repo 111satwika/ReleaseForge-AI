@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime, timezone
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -15,7 +16,7 @@ from app.llm.factory import get_llm_provider
 from app.mcp.factory import get_mcp_client
 from app.memory import repository as memory
 from app.rag.factory import get_graph_store, get_vector_store
-from app.rag.retriever import hybrid_retrieve
+from app.rag.reranker import hybrid_retrieve_reranked
 
 # `k8s_tools` is still imported directly — but only for its pure, no-subprocess helpers
 # (build_deployment_manifest, sanitize_dns_label, APP_LABEL, ...). Every function that
@@ -97,7 +98,7 @@ async def _retrieved_context(workspace_path: str, question: str) -> str:
     chat must still work without it, just without the extra grounding."""
     try:
         llm = get_llm_provider()
-        hits = await hybrid_retrieve(question, llm.embed, get_vector_store(), k=4)
+        hits = await hybrid_retrieve_reranked(question, llm.embed, llm.chat, get_vector_store(), k=4, fetch_k=10)
     except Exception:
         logger.warning("RAG retrieval skipped for chat — embedding call failed", exc_info=True)
         return ""
@@ -629,17 +630,27 @@ async def select_deployment_strategy(state: AgentState) -> dict:
     app_name = k8s_tools.sanitize_dns_label(repo)
     namespace = f"releaseforge-{app_name}"
 
-    try:
-        has_existing = await mcp.call_tool(
-            "deployment", "deployment_exists", {"namespace": namespace, "deployment_name": app_name}
-        )
-    except RuntimeError:
-        # No kubectl at all — the kubernetes MCP server raised, which the client surfaces
-        # as a RuntimeError. decide_deployment_strategy still runs (Recreate, since
-        # there's clearly no prior deployment either), and the actual missing-tool
-        # failure surfaces cleanly later, in deploy(), the same graceful-failure pattern
-        # already used for a missing `docker`/`gh` binary.
-        has_existing = False
+    # Tracked state (DeploymentState) is the real fact, when it exists — it doesn't rely
+    # on a naming-convention guess about which Deployment resource is "the" stable one,
+    # unlike the deployment_exists(app_name) fallback below. Falls back to that raw
+    # kubectl check only for an app that was deployed before this tracking existed, or
+    # whose first deploy somehow never got recorded — has_existing should still reflect
+    # reality even without a DeploymentState row yet.
+    tracked_state = await memory.get_deployment_state(workspace, app_name)
+    if tracked_state is not None:
+        has_existing = True
+    else:
+        try:
+            has_existing = await mcp.call_tool(
+                "deployment", "deployment_exists", {"namespace": namespace, "deployment_name": app_name}
+            )
+        except RuntimeError:
+            # No kubectl at all — the kubernetes MCP server raised, which the client
+            # surfaces as a RuntimeError. decide_deployment_strategy still runs (Recreate,
+            # since there's clearly no prior deployment either), and the actual
+            # missing-tool failure surfaces cleanly later, in deploy(), the same
+            # graceful-failure pattern already used for a missing `docker`/`gh` binary.
+            has_existing = False
 
     strategy, reason = k8s_tools.decide_deployment_strategy(
         has_existing, state.get("review_risk", "Unknown"), state.get("readiness_score", 0)
@@ -694,12 +705,16 @@ async def deploy(state: AgentState) -> dict:
     port = k8s_tools.detect_container_port(state["workspace_path"])
     log_lines = [state.get("deploy_log", "")]
     deploy_color = ""
+    # Stamped here, not in select_deployment_strategy() — that node runs before the human
+    # approval gate, which can sit open for an arbitrary amount of time. MTTR should
+    # measure actual system recovery time, not how long a person took to click approve.
+    deploy_started_at = datetime.now(timezone.utc).isoformat()
 
     try:
         cluster_result = await mcp.call_tool("deployment", "ensure_kind_cluster", {})
         log_lines.append(f"kind cluster: {cluster_result['message']}")
         if not cluster_result["ok"]:
-            return {"deploy_log": "\n".join(log_lines), "deploy_applied": False}
+            return {"deploy_log": "\n".join(log_lines), "deploy_applied": False, "deploy_started_at": deploy_started_at}
 
         ns_result = await mcp.call_tool("deployment", "ensure_namespace", {"namespace": namespace})
         log_lines.append(f"namespace: {ns_result['message']}")
@@ -707,7 +722,7 @@ async def deploy(state: AgentState) -> dict:
         load_result = await mcp.call_tool("deployment", "kind_load_image", {"image_tag": image})
         log_lines.append(f"image load: {load_result['message']}")
         if not load_result["ok"]:
-            return {"deploy_log": "\n".join(log_lines), "deploy_applied": False}
+            return {"deploy_log": "\n".join(log_lines), "deploy_applied": False, "deploy_started_at": deploy_started_at}
 
         if strategy in ("Recreate", "Rolling"):
             strategy_type = "Recreate" if strategy == "Recreate" else "RollingUpdate"
@@ -816,13 +831,14 @@ async def deploy(state: AgentState) -> dict:
             "deploy_applied": ok,
             "k8s_deploy_target": deploy_target,
             "deploy_color": deploy_color,
+            "deploy_started_at": deploy_started_at,
         }
     except RuntimeError as exc:
         # A missing `kind`/`kubectl` binary on the kubernetes MCP server's side surfaces
         # here as a tool-call failure — same graceful-failure outcome as before, just
         # arriving through the MCP client instead of a local KubeToolMissingError.
         log_lines.append(str(exc))
-        return {"deploy_log": "\n".join(log_lines), "deploy_applied": False}
+        return {"deploy_log": "\n".join(log_lines), "deploy_applied": False, "deploy_started_at": deploy_started_at}
 
 
 def route_after_deploy(state: AgentState) -> str:
@@ -878,6 +894,7 @@ def route_after_monitor(state: AgentState) -> str:
 
 async def promote_and_finish(state: AgentState) -> dict:
     mcp = get_mcp_client()
+    workspace = state["workspace_path"]
     namespace = state["k8s_namespace"]
     app_name = state["k8s_app_name"]
     service_name = state["k8s_service_name"]
@@ -886,7 +903,13 @@ async def promote_and_finish(state: AgentState) -> dict:
     image = state["docker_image_tag"]
     log_lines = [state.get("deploy_log", "")]
 
-    if strategy == "Blue-Green":
+    if strategy in ("Recreate", "Rolling"):
+        # These are always the plain-named Deployment, receiving traffic directly —
+        # nothing to "promote," but this is still the moment to record that this app's
+        # stable deployment is (still) the plain-named one.
+        await memory.set_deployment_state(workspace, app_name, app_name, strategy)
+
+    elif strategy == "Blue-Green":
         new_color = state.get("deploy_color", "")
         await mcp.call_tool(
             "deployment",
@@ -910,44 +933,62 @@ async def promote_and_finish(state: AgentState) -> dict:
         # no longer matches them). delete_deployment is a no-op if it doesn't exist, so
         # this is always safe to attempt.
         await mcp.call_tool("deployment", "delete_deployment", {"namespace": namespace, "deployment_name": app_name})
+        await memory.set_deployment_state(workspace, app_name, target, "Blue-Green")
 
     elif strategy == "Canary":
-        # target != app_name alone isn't enough to know a real, plain-named stable
-        # Deployment exists to promote into — found by live-testing a Canary run right
-        # after a Blue-Green promotion: the "stable" version was actually named
-        # "<app>-green", so this used to try to `set image` on a Deployment named plain
-        # "<app>" that didn't exist, then delete the canary regardless of whether that
-        # succeeded — destroying real serving capacity (the canary's live pods) for a
-        # promotion that never actually happened. Check for real instead.
-        stable_exists = target != app_name and await mcp.call_tool(
-            "deployment", "deployment_exists", {"namespace": namespace, "deployment_name": app_name}
+        # Ask DeploymentState what this app's stable Deployment is actually named,
+        # instead of guessing "app_name" from a naming convention — found by
+        # live-testing a Canary run right after a Blue-Green promotion: the "stable"
+        # version was actually named "<app>-green", so the old naming-convention guess
+        # tried to `set image` on a Deployment named plain "<app>" that didn't exist,
+        # then deleted the canary regardless of whether that succeeded — destroying real
+        # serving capacity for a promotion that never happened. The old guess also had a
+        # second, quieter bug: it compared `target == app_name` as a fallback case, but
+        # `target` for Canary is always "<app>-canary" here, so that branch could never
+        # actually run — dead code that looked like a handled case but wasn't.
+        tracked_state = await memory.get_deployment_state(workspace, app_name)
+        if tracked_state is not None:
+            stable_deployment_name = tracked_state.current_deployment_name
+        else:
+            # No tracked state yet — this app was deployed before this tracking existed.
+            # Fall back to the plain-named guess rather than refusing to promote at all.
+            stable_deployment_name = app_name
+
+        stable_exists = await mcp.call_tool(
+            "deployment", "deployment_exists", {"namespace": namespace, "deployment_name": stable_deployment_name}
         )
         if stable_exists:
             set_image_result = await mcp.call_tool(
                 "deployment",
                 "set_deployment_image",
-                {"namespace": namespace, "deployment_name": app_name, "container_name": app_name, "image": image},
+                {
+                    "namespace": namespace,
+                    "deployment_name": stable_deployment_name,
+                    "container_name": app_name,
+                    "image": image,
+                },
             )
             if set_image_result["ok"]:
                 await mcp.call_tool(
-                    "deployment", "rollout_status", {"namespace": namespace, "deployment_name": app_name}
+                    "deployment", "rollout_status", {"namespace": namespace, "deployment_name": stable_deployment_name}
                 )
                 delete_result = await mcp.call_tool(
                     "deployment", "delete_deployment", {"namespace": namespace, "deployment_name": target}
                 )
-                log_lines.append(f"promoted canary to stable, removed canary deployment ({delete_result['message']})")
+                log_lines.append(
+                    f"promoted canary to stable ({stable_deployment_name}), removed canary deployment "
+                    f"({delete_result['message']})"
+                )
+                await memory.set_deployment_state(workspace, app_name, stable_deployment_name, "Canary")
             else:
                 log_lines.append(
                     f"couldn't promote canary to the stable deployment ({set_image_result['message']}) — "
                     "leaving the canary running rather than deleting it for a promotion that didn't happen"
                 )
-        elif target == app_name:
-            log_lines.append("canary deployment was this app's first-ever version — nothing further to promote")
         else:
             log_lines.append(
-                "no plain-named stable deployment to promote into (this app's stable version is likely "
-                "running under a Blue-Green name) — leaving the canary running as-is; a known gap in "
-                "mixing strategies across releases, see the Phase 4 build-plan notes"
+                f"no known stable deployment ({stable_deployment_name}) to promote into — leaving the canary "
+                "running as-is rather than deleting real serving capacity for a promotion that can't happen safely"
             )
 
     pr_url = state.get("pr_url") or state.get("branch_name", "")

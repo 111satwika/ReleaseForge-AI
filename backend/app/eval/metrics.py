@@ -68,15 +68,17 @@ class CodingMetrics:
 
 @dataclass
 class DeploymentMetrics:
-    """Design doc Section 16 "Deployment": deployment success rate, rollback rate. Mean
-    time to recovery isn't included — ReleaseRecord stores one row per finished task, not
-    a failure timestamp and a separate recovery timestamp to compute a duration from."""
+    """Design doc Section 16 "Deployment": deployment success rate, rollback rate, and —
+    since IncidentRecord started stamping deploy_started_at — a real mean time to
+    recovery, not inferred by subtracting two timestamps written in the same request
+    (which is all that was available before)."""
 
     deployments_attempted: int
     deployments_succeeded: int
     deployment_success_rate: float | None
     rollbacks: int
     rollback_rate: float | None
+    mean_time_to_recovery_seconds: float | None
     strategy_breakdown: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
@@ -132,7 +134,20 @@ def compute_coding_metrics(records: list) -> CodingMetrics:
     )
 
 
-def compute_deployment_metrics(records: list) -> DeploymentMetrics:
+def compute_mttr_seconds(incidents: list) -> float | None:
+    """Mean seconds from deploy_started_at (stamped at the top of graph.py's deploy(),
+    i.e. right after the human approval gate, not before it — a person taking an hour to
+    click approve shouldn't inflate this number) to created_at (roughly "the rollback
+    gate finished resolving"). Only over incidents that actually have deploy_started_at
+    set — an incident recorded before this column existed has it as None and is excluded
+    outright, not treated as a 0-second recovery."""
+    durations = [
+        (i.created_at - i.deploy_started_at).total_seconds() for i in incidents if i.deploy_started_at is not None
+    ]
+    return round(sum(durations) / len(durations), 1) if durations else None
+
+
+def compute_deployment_metrics(records: list, incidents: list | None = None) -> DeploymentMetrics:
     attempted = succeeded = rollbacks = 0
     strategy_breakdown: dict[str, dict[str, int]] = {}
     for r in records:
@@ -154,6 +169,7 @@ def compute_deployment_metrics(records: list) -> DeploymentMetrics:
         deployment_success_rate=_rate(succeeded, attempted),
         rollbacks=rollbacks,
         rollback_rate=_rate(rollbacks, attempted),
+        mean_time_to_recovery_seconds=compute_mttr_seconds(incidents or []),
         strategy_breakdown=strategy_breakdown,
     )
 
@@ -162,9 +178,10 @@ async def evaluate_platform(workspace_path: str | None = None) -> dict:
     """The I/O half: fetches real history, then hands it to the pure compute_* functions
     above. workspace_path=None evaluates across every repo this tool has ever worked on."""
     records = await memory.all_releases(workspace_path)
+    incidents = await memory.all_incidents(workspace_path)
     return {
         "records_evaluated": len(records),
         "agent": compute_agent_metrics(records),
         "coding": compute_coding_metrics(records),
-        "deployment": compute_deployment_metrics(records),
+        "deployment": compute_deployment_metrics(records, incidents),
     }

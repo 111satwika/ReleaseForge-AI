@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 
+from app.llm.cost import estimate_cost
 from app.observability.tracing import get_tracer, record_exception
 
 from .base import LLMMessage, LLMResponse
@@ -45,6 +46,14 @@ class OllamaProvider:
                 span.set_attribute("llm.prompt_tokens", response.usage.prompt_tokens)
                 span.set_attribute("llm.completion_tokens", response.usage.completion_tokens)
                 span.set_attribute("llm.total_tokens", response.usage.total_tokens)
+                # Always None for every model this provider actually talks to today —
+                # Ollama model names don't appear in the paid pricing table, correctly,
+                # since they're free/local. Recorded anyway so the attribute is already
+                # in place the moment a real OpenAI/Anthropic provider exists to make it
+                # non-None, rather than needing tracing touched again at that point.
+                cost = estimate_cost(self.model, response.usage.prompt_tokens, response.usage.completion_tokens)
+                if cost.estimated_cost_usd is not None:
+                    span.set_attribute("llm.estimated_cost_usd", cost.estimated_cost_usd)
             return LLMResponse(content=content, model=self.model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

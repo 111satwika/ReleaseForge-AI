@@ -81,7 +81,34 @@ class IncidentRecord(Base):
     root_cause: Mapped[str] = mapped_column(String)
     deploy_log: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Set from AgentState["deploy_started_at"] (stamped at the top of deploy()) —
+    # the piece that was actually missing for a real MTTR metric, not just a rename of
+    # an existing field. `created_at` below is roughly "when the rollback finished," so
+    # created_at - deploy_started_at is a real detection-to-recovery duration, not
+    # inferred from two records that otherwise both get written in the same request.
+    deploy_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class DeploymentState(Base):
+    """One row per (workspace_path, app_name): the Kubernetes Deployment resource name
+    actually serving stable traffic right now, tracked as real state instead of inferred
+    from naming conventions. Closes the gap Phase 4's own build-plan notes flagged and
+    left open — promote_and_finish()'s Canary branch used to assume the stable version
+    always lives at a plain-named Deployment (`<app>`), which silently failed to promote
+    into a stable version actually running under a Blue-Green name (`<app>-green`) and,
+    in a real live test, deleted the canary's serving pods for a promotion that never
+    happened. No history is kept here on purpose — this is "what's true right now,"
+    ReleaseRecord/IncidentRecord already own the history."""
+
+    __tablename__ = "deployment_state"
+
+    workspace_path: Mapped[str] = mapped_column(String, primary_key=True)
+    app_name: Mapped[str] = mapped_column(String, primary_key=True)
+    current_deployment_name: Mapped[str] = mapped_column(String)
+    current_strategy: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
 
 class AuditLog(Base):

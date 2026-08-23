@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from app.memory.db import SessionLocal
-from app.memory.models import IncidentRecord, ProjectMemory, ReleaseRecord
+from app.memory.models import DeploymentState, IncidentRecord, ProjectMemory, ReleaseRecord
 
 
 async def get_cached_test_command(workspace_path: str) -> str | None:
@@ -71,3 +71,40 @@ async def all_releases(workspace_path: str | None = None) -> list[ReleaseRecord]
             query = query.where(ReleaseRecord.workspace_path == workspace_path)
         result = await session.execute(query)
         return list(result.scalars())
+
+
+async def all_incidents(workspace_path: str | None = None) -> list[IncidentRecord]:
+    """Same shape as all_releases() — unfiltered, platform-wide by default — for the MTTR
+    metric in eval/metrics.py, which needs every incident's timestamps, not just the
+    handful recent_incidents() returns for a chat-context/dashboard use."""
+    async with SessionLocal() as session:
+        query = select(IncidentRecord).order_by(IncidentRecord.created_at.asc())
+        if workspace_path is not None:
+            query = query.where(IncidentRecord.workspace_path == workspace_path)
+        result = await session.execute(query)
+        return list(result.scalars())
+
+
+async def get_deployment_state(workspace_path: str, app_name: str) -> DeploymentState | None:
+    async with SessionLocal() as session:
+        return await session.get(DeploymentState, (workspace_path, app_name))
+
+
+async def set_deployment_state(
+    workspace_path: str, app_name: str, current_deployment_name: str, current_strategy: str
+) -> None:
+    async with SessionLocal() as session:
+        record = await session.get(DeploymentState, (workspace_path, app_name))
+        if record:
+            record.current_deployment_name = current_deployment_name
+            record.current_strategy = current_strategy
+        else:
+            session.add(
+                DeploymentState(
+                    workspace_path=workspace_path,
+                    app_name=app_name,
+                    current_deployment_name=current_deployment_name,
+                    current_strategy=current_strategy,
+                )
+            )
+        await session.commit()
