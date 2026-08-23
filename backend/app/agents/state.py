@@ -32,6 +32,24 @@ class AgentState(TypedDict, total=False):
     readiness_recommendation: str  # "GO" | "NO-GO"
     readiness_breakdown: list[str]
 
+    docker_image_tag: str
+
+    deployment_strategy: str  # "Recreate" | "Rolling" | "Canary" | "Blue-Green"
+    deployment_strategy_reason: str
+    k8s_namespace: str
+    k8s_app_name: str
+    k8s_service_name: str
+    k8s_deploy_target: str  # the actual Deployment name just rolled out (app / app-canary / app-green / app-blue)
+    deploy_color: str  # only meaningful for Blue-Green: "blue" | "green" (the NEW color just deployed)
+    deploy_applied: bool | None
+    deploy_log: str
+
+    validation_passed: bool | None
+    monitor_summary: str
+
+    recovery_analysis: str
+    rollback_performed: bool | None
+
     approval_response: str
 
     # How this task ended, e.g. "declined_at_plan", "docker_built" — set by whichever

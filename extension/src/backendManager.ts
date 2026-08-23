@@ -8,7 +8,7 @@ let outputChannel: vscode.OutputChannel | undefined;
 
 function getOutputChannel(): vscode.OutputChannel {
   if (!outputChannel) {
-    outputChannel = vscode.window.createOutputChannel('DeployGenie Backend');
+    outputChannel = vscode.window.createOutputChannel('ReleaseForge Backend');
   }
   return outputChannel;
 }
@@ -37,7 +37,7 @@ function resolvePythonPath(backendDir: string, configuredPythonPath: string): st
 
 async function promptForBackendDir(): Promise<string | undefined> {
   const choice = await vscode.window.showInformationMessage(
-    "DeployGenie couldn't find its backend — locate the DeployGenie 'backend' folder (the one containing app/main.py). You'll only need to do this once.",
+    "ReleaseForge couldn't find its backend — locate the ReleaseForge 'backend' folder (the one containing app/main.py). You'll only need to do this once.",
     'Locate backend folder',
   );
   if (choice !== 'Locate backend folder') {
@@ -47,21 +47,21 @@ async function promptForBackendDir(): Promise<string | undefined> {
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    openLabel: 'Select DeployGenie backend folder',
+    openLabel: 'Select ReleaseForge backend folder',
   });
   if (!picked || picked.length === 0) {
     return undefined;
   }
   const dir = picked[0].fsPath;
   await vscode.workspace
-    .getConfiguration('deploygenie')
+    .getConfiguration('releaseforge')
     .update('backendDir', dir, vscode.ConfigurationTarget.Global);
   return dir;
 }
 
 /** Starts the backend if it isn't already answering /health. Safe to call repeatedly. */
 export async function ensureBackendRunning(): Promise<boolean> {
-  const config = vscode.workspace.getConfiguration('deploygenie');
+  const config = vscode.workspace.getConfiguration('releaseforge');
   const backendUrl = config.get<string>('backendUrl')!;
 
   if (await checkHealth(backendUrl)) {
@@ -73,7 +73,7 @@ export async function ensureBackendRunning(): Promise<boolean> {
     const located = await promptForBackendDir();
     if (!located) {
       vscode.window.showWarningMessage(
-        'DeployGenie backend is not running and no location was set. Run "DeployGenie: Restart Backend" once you have.',
+        'ReleaseForge backend is not running and no location was set. Run "ReleaseForge: Restart Backend" once you have.',
       );
       return false;
     }
@@ -83,7 +83,7 @@ export async function ensureBackendRunning(): Promise<boolean> {
   const pythonPath = resolvePythonPath(backendDir, config.get<string>('pythonPath') || '');
   if (!fs.existsSync(pythonPath)) {
     vscode.window.showErrorMessage(
-      `DeployGenie: no Python interpreter at ${pythonPath}. Set "deploygenie.pythonPath" in settings, or create a venv at ${backendDir}/.venv.`,
+      `ReleaseForge: no Python interpreter at ${pythonPath}. Set "releaseforge.pythonPath" in settings, or create a venv at ${backendDir}/.venv.`,
     );
     return false;
   }
@@ -104,7 +104,7 @@ export async function ensureBackendRunning(): Promise<boolean> {
   });
 
   return vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Starting DeployGenie backend…' },
+    { location: vscode.ProgressLocation.Notification, title: 'Starting ReleaseForge backend…' },
     async () => {
       for (let attempt = 0; attempt < 30; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -114,7 +114,7 @@ export async function ensureBackendRunning(): Promise<boolean> {
       }
       channel.show(true);
       vscode.window.showErrorMessage(
-        'DeployGenie backend did not start in time — see the "DeployGenie Backend" output channel.',
+        'ReleaseForge backend did not start in time — see the "ReleaseForge Backend" output channel.',
       );
       return false;
     },

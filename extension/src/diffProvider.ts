@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export const DEPLOYGENIE_DIFF_SCHEME = 'deploygenie-original';
+export const RELEASEFORGE_DIFF_SCHEME = 'releaseforge-original';
 
 /**
  * Serves the "before" content of a proposed change as a read-only virtual document,
@@ -14,7 +14,7 @@ export class OriginalContentProvider implements vscode.TextDocumentContentProvid
   readonly onDidChange = this.changeEmitter.event;
 
   setContent(relativePath: string, content: string): vscode.Uri {
-    const uri = vscode.Uri.parse(`${DEPLOYGENIE_DIFF_SCHEME}:${relativePath}`);
+    const uri = vscode.Uri.parse(`${RELEASEFORGE_DIFF_SCHEME}:${relativePath}`);
     this.content.set(uri.toString(), content);
     this.changeEmitter.fire(uri);
     return uri;

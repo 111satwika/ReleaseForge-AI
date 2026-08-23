@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { ensureBackendRunning, stopBackend } from './backendManager';
 import { ChatViewProvider } from './chatViewProvider';
-import { DEPLOYGENIE_DIFF_SCHEME, OriginalContentProvider } from './diffProvider';
+import { DashboardPanel } from './dashboardPanel';
+import { RELEASEFORGE_DIFF_SCHEME, OriginalContentProvider } from './diffProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   const originalContentProvider = new OriginalContentProvider();
   context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(DEPLOYGENIE_DIFF_SCHEME, originalContentProvider),
+    vscode.workspace.registerTextDocumentContentProvider(RELEASEFORGE_DIFF_SCHEME, originalContentProvider),
   );
 
   const chatProvider = new ChatViewProvider(context.extensionUri, originalContentProvider);
@@ -18,20 +19,20 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({ dispose: stopBackend });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('deploygenie.restartBackend', async () => {
+    vscode.commands.registerCommand('releaseforge.restartBackend', async () => {
       stopBackend();
       await ensureBackendRunning();
     }),
   );
 
-  const disposable = vscode.commands.registerCommand('deploygenie.ping', async () => {
+  const disposable = vscode.commands.registerCommand('releaseforge.ping', async () => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-      vscode.window.showErrorMessage('DeployGenie: open a folder/workspace first.');
+      vscode.window.showErrorMessage('ReleaseForge: open a folder/workspace first.');
       return;
     }
     const workspacePath = workspaceFolders[0].uri.fsPath;
-    const backendUrl = vscode.workspace.getConfiguration('deploygenie').get<string>('backendUrl');
+    const backendUrl = vscode.workspace.getConfiguration('releaseforge').get<string>('backendUrl');
 
     try {
       const res = await fetch(`${backendUrl}/ping`, {
@@ -43,15 +44,21 @@ export function activate(context: vscode.ExtensionContext) {
         throw new Error(`Backend returned ${res.status}`);
       }
       const data = (await res.json()) as { llm_reply: string; model: string };
-      vscode.window.showInformationMessage(`DeployGenie (${data.model}): ${data.llm_reply}`);
+      vscode.window.showInformationMessage(`ReleaseForge (${data.model}): ${data.llm_reply}`);
     } catch (err) {
       vscode.window.showErrorMessage(
-        `DeployGenie: failed to reach backend at ${backendUrl}. Is it running? (${err})`,
+        `ReleaseForge: failed to reach backend at ${backendUrl}. Is it running? (${err})`,
       );
     }
   });
 
   context.subscriptions.push(disposable);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('releaseforge.showDashboard', () => {
+      DashboardPanel.show(context.extensionUri);
+    }),
+  );
 }
 
 export function deactivate() {

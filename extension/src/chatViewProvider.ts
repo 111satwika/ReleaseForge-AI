@@ -14,7 +14,7 @@ interface ProposedDiff {
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'deploygenie.chatView';
+  public static readonly viewType = 'releaseforge.chatView';
 
   private view?: vscode.WebviewView;
   private history: ChatMessage[] = [];
@@ -57,13 +57,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.view?.webview.postMessage({
         type: 'message',
         role: 'assistant',
-        content: 'Open a folder or workspace first — DeployGenie needs a repo to work with.',
+        content: 'Open a folder or workspace first — ReleaseForge needs a repo to work with.',
       });
       return;
     }
 
     const workspacePath = folders[0].uri.fsPath;
-    const backendUrl = vscode.workspace.getConfiguration('deploygenie').get<string>('backendUrl');
+    const backendUrl = vscode.workspace.getConfiguration('releaseforge').get<string>('backendUrl');
 
     this.view?.webview.postMessage({ type: 'thinking', value: true });
     try {
@@ -72,7 +72,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.view?.webview.postMessage({
           type: 'message',
           role: 'assistant',
-          content: "DeployGenie's backend isn't running and couldn't be started automatically. Run \"DeployGenie: Restart Backend\" from the Command Palette once it's set up.",
+          content: "ReleaseForge's backend isn't running and couldn't be started automatically. Run \"ReleaseForge: Restart Backend\" from the Command Palette once it's set up.",
         });
         return;
       }
@@ -85,13 +85,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (!res.ok) {
         throw new Error(`Backend returned ${res.status}`);
       }
-      const data = (await res.json()) as { reply: string; model: string; diff?: ProposedDiff | null };
+      const data = (await res.json()) as {
+        reply: string;
+        model: string;
+        diff?: ProposedDiff | null;
+        awaiting_approval?: boolean;
+      };
       this.history.push({ role: 'assistant', content: data.reply });
       this.view?.webview.postMessage({
         type: 'message',
         role: 'assistant',
         content: data.reply,
         model: data.model,
+        awaitingApproval: Boolean(data.awaiting_approval),
       });
 
       if (data.diff) {
@@ -101,7 +107,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.view?.webview.postMessage({
         type: 'message',
         role: 'assistant',
-        content: `Couldn't reach the DeployGenie backend at ${backendUrl}. (${err})`,
+        content: `Couldn't reach the ReleaseForge backend at ${backendUrl}. (${err})`,
       });
     } finally {
       this.view?.webview.postMessage({ type: 'thinking', value: false });
@@ -115,8 +121,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     const rightUri = vscode.Uri.joinPath(vscode.Uri.file(workspacePath), diff.target_file);
     const title = diff.original_content === null
-      ? `DeployGenie: new file ${diff.target_file}`
-      : `DeployGenie: proposed change to ${diff.target_file}`;
+      ? `ReleaseForge: new file ${diff.target_file}`
+      : `ReleaseForge: proposed change to ${diff.target_file}`;
 
     await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
   }
@@ -231,14 +237,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     cursor: pointer;
   }
   #send:hover { background: var(--vscode-button-hoverBackground); }
+  .approval-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .approval-actions button {
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 0.85em;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .approval-actions .approve-btn {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+  .approval-actions .approve-btn:hover { background: var(--vscode-button-hoverBackground); }
+  .approval-actions .decline-btn {
+    background: var(--vscode-button-secondaryBackground, transparent);
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  }
+  .approval-actions .decline-btn:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+  .approval-actions button:disabled { opacity: 0.5; cursor: default; }
 </style>
 </head>
 <body>
   <div id="repo"><span class="dot"></span><span id="repoName">No repo open</span></div>
-  <div id="messages"><div id="empty">Describe a change and DeployGenie will edit a file, run your tests, and show you a diff to review before anything is committed or pushed.</div></div>
-  <div id="thinking">DeployGenie is thinking…</div>
+  <div id="messages"><div id="empty">Describe a change and ReleaseForge will edit a file, run your tests, and show you a diff to review before anything is committed or pushed.</div></div>
+  <div id="thinking">ReleaseForge is thinking…</div>
   <div id="inputRow">
-    <textarea id="input" placeholder="Message DeployGenie…" rows="1"></textarea>
+    <textarea id="input" placeholder="Message ReleaseForge…" rows="1"></textarea>
     <button id="send">Send</button>
   </div>
 <script nonce="${nonce}">
@@ -250,7 +281,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   const repoNameEl = document.getElementById('repoName');
   let emptyEl = document.getElementById('empty');
 
-  function addMessage(role, content, model) {
+  let activeApprovalButtons = null;
+
+  function disableActiveApprovalButtons() {
+    if (activeApprovalButtons) {
+      activeApprovalButtons.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      activeApprovalButtons = null;
+    }
+  }
+
+  function addMessage(role, content, model, awaitingApproval) {
     if (emptyEl) { emptyEl.remove(); emptyEl = null; }
     const div = document.createElement('div');
     div.className = 'msg ' + role;
@@ -261,13 +301,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tag.textContent = model;
       div.appendChild(tag);
     }
+    if (role === 'assistant' && awaitingApproval) {
+      const actions = document.createElement('div');
+      actions.className = 'approval-actions';
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'approve-btn';
+      approveBtn.textContent = 'Approve';
+      approveBtn.addEventListener('click', () => respond('approve', actions));
+
+      const declineBtn = document.createElement('button');
+      declineBtn.className = 'decline-btn';
+      declineBtn.textContent = 'Decline';
+      declineBtn.addEventListener('click', () => respond('no', actions));
+
+      actions.appendChild(approveBtn);
+      actions.appendChild(declineBtn);
+      div.appendChild(actions);
+      activeApprovalButtons = actions;
+    }
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function respond(text, ownButtons) {
+    // A button click and a typed reply both go through the same send() path — the
+    // backend already treats "approve"/"no" text no differently depending on where it
+    // came from, so the UI doesn't need a separate code path for it either.
+    ownButtons.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    if (activeApprovalButtons === ownButtons) { activeApprovalButtons = null; }
+    vscode.postMessage({ type: 'send', text });
   }
 
   function send() {
     const text = inputEl.value;
     if (!text.trim()) { return; }
+    disableActiveApprovalButtons();
     vscode.postMessage({ type: 'send', text });
     inputEl.value = '';
     inputEl.style.height = 'auto';
@@ -288,7 +357,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   window.addEventListener('message', (event) => {
     const msg = event.data;
     if (msg.type === 'message') {
-      addMessage(msg.role, msg.content, msg.model);
+      addMessage(msg.role, msg.content, msg.model, msg.awaitingApproval);
     } else if (msg.type === 'thinking') {
       thinkingEl.classList.toggle('active', msg.value);
     } else if (msg.type === 'repo') {

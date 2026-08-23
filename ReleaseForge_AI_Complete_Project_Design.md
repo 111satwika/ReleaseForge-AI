@@ -1,8 +1,8 @@
-# DeployGenie AI — Autonomous AI Release Engineering Platform
+# ReleaseForge AI — Autonomous AI Release Engineering Platform
 
 ## 1. Vision
 
-DeployGenie AI is an **Autonomous AI Release Engineering Platform** that manages the software delivery lifecycle from code changes through AI code review, testing, release readiness, deployment, validation, monitoring, and recovery.
+ReleaseForge AI is an **Autonomous AI Release Engineering Platform** that manages the software delivery lifecycle from code changes through AI code review, testing, release readiness, deployment, validation, monitoring, and recovery.
 
 The goal is not simply:
 
@@ -286,7 +286,7 @@ Recommended agents:
 MCP should be a major integration layer.
 
 ```text
-                    DeployGenie
+                    ReleaseForge AI
                          |
                      MCP Client
                          |
@@ -459,7 +459,7 @@ Use for CI/CD integration.
 
 # 7. RAG / Knowledge Engine
 
-DeployGenie can use RAG for:
+ReleaseForge AI can use RAG for:
 
 - Engineering documentation
 - Runbooks
@@ -696,7 +696,7 @@ Never expose secrets such as `.env`, API keys, cloud credentials, tokens, or pri
 Recommended:
 
 ```text
-DeployGenie
+ReleaseForge AI
  ↓
 OpenTelemetry
  ├── Prometheus
@@ -905,7 +905,7 @@ Developer:
 
 > "Add rate limiting to my FastAPI application and release it to staging."
 
-DeployGenie:
+ReleaseForge AI:
 
 ```text
 1. Analyze repository
@@ -1053,13 +1053,13 @@ RAG + Knowledge Graph.
 Observability and evaluation.
 
 ## Stage 16
-Deploy DeployGenie itself to AWS.
+Deploy ReleaseForge AI itself to AWS.
 
 ---
 
 # 24. Resume Description
 
-**DeployGenie AI — Autonomous AI Release Engineering Platform**
+**ReleaseForge AI — Autonomous AI Release Engineering Platform**
 
 > Designed and developed an AI-powered release engineering platform using Multi-Agent Systems, LangGraph, MCP, RAG, memory, and cloud-native infrastructure. The platform analyzes codebases, implements changes, creates pull requests, performs independent AI code reviews, executes tests and security checks, evaluates release readiness, selects deployment strategies, orchestrates Docker/Kubernetes/cloud deployments, validates releases, monitors production health, performs root-cause analysis and rollback, and generates release documentation.
 
@@ -1099,4 +1099,4 @@ Observability
 Security
 ```
 
-DeployGenie should therefore be positioned as a **serious AI Engineering / Agentic AI portfolio project**, rather than another RAG chatbot or deployment script.
+ReleaseForge AI should therefore be positioned as a **serious AI Engineering / Agentic AI portfolio project**, rather than another RAG chatbot or deployment script.

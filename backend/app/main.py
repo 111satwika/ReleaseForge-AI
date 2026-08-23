@@ -1,16 +1,27 @@
+import logging
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel
 
 from app.agents.graph import build_graph, is_affirmative
+from app.eval.metrics import evaluate_platform
 from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
+from app.mcp.factory import start_mcp_client, stop_mcp_client
 from app.memory import repository as memory
 from app.memory.db import init_db
+from app.observability.tracing import get_tracer, record_exception, setup_tracing
+from app.rag.factory import get_graph_store, get_vector_store
+from app.rag.ingest import ingest_project_docs, ingest_release_record
+from app.security.audit import recent_audit_events
+
+logger = logging.getLogger(__name__)
 
 NEGATIVE = {"no", "n", "nah", "stop", "cancel", "don't", "dont", "nevermind", "never mind", "decline", "rejected", "reject"}
 
@@ -29,16 +40,46 @@ def _looks_like_new_instruction(text: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # First, before anything else gets a chance to make an LLM call or an MCP call that
+    # should be traced — a TracerProvider configured after spans have already started
+    # would just silently drop them.
+    setup_tracing()
+
     await init_db()
+
+    # Spawns the filesystem/docker/kubernetes MCP servers as subprocesses and discovers
+    # their tools once, here — not lazily on first use mid-request, since starting three
+    # subprocesses and doing an MCP handshake with each isn't something that should
+    # happen accidentally inside a request's critical path.
+    await start_mcp_client()
+
     # SQLite-backed, not in-memory — a paused approval (or an entire conversation)
     # now survives a backend restart. MemorySaver lost everything the moment the
     # process died, which is exactly what happened to a real in-progress approval.
     async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
         app.state.graph = build_graph(checkpointer)
-        yield
+
+        # Best-effort: this needs Ollama running with an embedding model pulled
+        # (RELEASEFORGE_EMBEDDING_MODEL, default nomic-embed-text). A backend without
+        # that available should still start and serve chat/tasks normally — RAG is an
+        # enhancement to chat, not a dependency of the release pipeline.
+        try:
+            indexed = await ingest_project_docs(get_llm_provider(), get_vector_store())
+            if indexed:
+                logger.info("Indexed %d doc chunks into the RAG vector store", indexed)
+        except Exception:
+            logger.warning("Skipping doc ingestion — embedding call failed (is Ollama running?)", exc_info=True)
+
+        try:
+            yield
+        finally:
+            await stop_mcp_client()
 
 
-app = FastAPI(title="DeployGenie Core", lifespan=lifespan)
+app = FastAPI(title="ReleaseForge AI Core", lifespan=lifespan)
+# Automatic request/response spans for every route — the design doc's "workflow
+# duration" tracking starts at the HTTP boundary, not just inside the agent graph.
+FastAPIInstrumentor.instrument_app(app)
 
 
 class PingRequest(BaseModel):
@@ -49,6 +90,46 @@ class PingRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/eval/summary")
+async def eval_summary(workspace_path: str | None = None):
+    """Design doc Section 16's "evaluate the complete platform," made real: agent
+    completion rate, coding (test pass / review acceptance) rate, and deployment
+    success/rollback rate, computed from actual ReleaseRecord history rather than
+    simulated numbers. Every rate is `null`, not a fake 0 or 100%, until there's
+    genuinely at least one record to compute it from — see app/eval/metrics.py."""
+    report = await evaluate_platform(workspace_path)
+    return {
+        "records_evaluated": report["records_evaluated"],
+        "agent": asdict(report["agent"]),
+        "coding": asdict(report["coding"]),
+        "deployment": asdict(report["deployment"]),
+    }
+
+
+@app.get("/audit/log")
+async def audit_log(limit: int = 100, workspace_path: str | None = None):
+    """Design doc Section 14's "audit logs" requirement — every MCP tool call this
+    backend has attempted, successful or not, including scope-denied attempts (an agent
+    role reaching for a tool outside its least-privilege scope). See
+    app/security/scopes.py and app/mcp/client.py for where each row gets written."""
+    events = await recent_audit_events(limit=limit, workspace_path=workspace_path)
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "role": e.role,
+                "tool_name": e.tool_name,
+                "server_name": e.server_name,
+                "workspace_path": e.workspace_path,
+                "status": e.status,
+                "detail": e.detail,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in events
+        ]
+    }
 
 
 @app.post("/ping")
@@ -85,7 +166,7 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
     if not outcome:
         return  # plain chat turn, or nothing ever got planned
 
-    await memory.record_release(
+    record = await memory.record_release(
         workspace_path=workspace_path,
         target_file=values.get("target_file") or None,
         plan=values.get("plan") or None,
@@ -97,54 +178,83 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
         readiness_recommendation=values.get("readiness_recommendation") or None,
         branch_name=values.get("branch_name") or None,
         pr_url=values.get("pr_url") or None,
+        deployment_strategy=values.get("deployment_strategy") or None,
         outcome=outcome,
     )
+
+    # Best-effort, same reasoning as the doc ingest in lifespan(): a release is recorded
+    # (and the response already sent) whether or not RAG indexing succeeds.
+    try:
+        await ingest_release_record(get_llm_provider(), get_vector_store(), get_graph_store(), record)
+    except Exception:
+        logger.warning("Skipping release-record ingestion — embedding call failed", exc_info=True)
 
 
 @app.post("/chat")
 async def chat(req: ChatRequest, request: Request):
-    graph = request.app.state.graph
-    # One active run per repo for now — real per-conversation sessions are a Phase 5.5+ concern.
-    config = {"configurable": {"thread_id": req.workspace_path}}
-    last_message = req.messages[-1].content if req.messages else ""
+    tracer = get_tracer()
+    with tracer.start_as_current_span("workflow.chat") as span:
+        span.set_attribute("workspace_path", req.workspace_path)
+        try:
+            graph = request.app.state.graph
+            # One active run per repo for now — real per-conversation sessions are a Phase 5.5+ concern.
+            config = {"configurable": {"thread_id": req.workspace_path}}
+            last_message = req.messages[-1].content if req.messages else ""
 
-    pending = await graph.aget_state(config)
-    redirected = False
-    if pending.next:
-        result = await graph.ainvoke(Command(resume=last_message), config=config)
-        if not is_affirmative(last_message) and _looks_like_new_instruction(last_message):
-            # That wasn't really a decline — it's a new request. The resume above already
-            # safely stopped the pending change (never assume "yes" from ambiguous text);
-            # now start the new one for real instead of just discarding what they said.
-            redirected = True
-            result = await graph.ainvoke(
-                {"workspace_path": req.workspace_path, "user_message": last_message},
-                config=config,
-            )
-    else:
-        result = await graph.ainvoke(
-            {"workspace_path": req.workspace_path, "user_message": last_message},
-            config=config,
-        )
+            pending = await graph.aget_state(config)
+            span.set_attribute("workflow.resumed", bool(pending.next))
+            redirected = False
+            if pending.next:
+                result = await graph.ainvoke(Command(resume=last_message), config=config)
+                if not is_affirmative(last_message) and _looks_like_new_instruction(last_message):
+                    # That wasn't really a decline — it's a new request. The resume above already
+                    # safely stopped the pending change (never assume "yes" from ambiguous text);
+                    # now start the new one for real instead of just discarding what they said.
+                    redirected = True
+                    result = await graph.ainvoke(
+                        {"workspace_path": req.workspace_path, "user_message": last_message},
+                        config=config,
+                    )
+            else:
+                result = await graph.ainvoke(
+                    {"workspace_path": req.workspace_path, "user_message": last_message},
+                    config=config,
+                )
+            span.set_attribute("workflow.redirected", redirected)
 
-    diff = None
-    if "__interrupt__" in result:
-        # Each await_*_approval node builds its own message — the gates ask genuinely
-        # different questions (approve the plan? the code? pushing it?), not one shared template.
-        reply = result["__interrupt__"][0].value.get("message", "")
-        state_values = (await graph.aget_state(config)).values
-        target_file = state_values.get("target_file")
-        if target_file and state_values.get("new_content"):
-            diff = {
-                "target_file": target_file,
-                "original_content": state_values.get("original_content"),
-                "new_content": state_values.get("new_content", ""),
+            diff = None
+            awaiting_approval = "__interrupt__" in result
+            if awaiting_approval:
+                # Each await_*_approval node builds its own message — the gates ask genuinely
+                # different questions (approve the plan? the code? pushing it?), not one shared template.
+                span.set_attribute("workflow.interrupted", True)
+                reply = result["__interrupt__"][0].value.get("message", "")
+                state_values = (await graph.aget_state(config)).values
+                target_file = state_values.get("target_file")
+                if target_file and state_values.get("new_content"):
+                    diff = {
+                        "target_file": target_file,
+                        "original_content": state_values.get("original_content"),
+                        "new_content": state_values.get("new_content", ""),
+                    }
+            else:
+                span.set_attribute("workflow.interrupted", False)
+                reply = result.get("reply", "(the agent finished without producing a reply)")
+                span.set_attribute("workflow.outcome", result.get("outcome") or "chat")
+                await _maybe_record_release(graph, config, req.workspace_path)
+
+            if redirected:
+                reply = f"(Stopped the previous change — starting this instead.)\n\n{reply}"
+
+            # `awaiting_approval` lets the extension render real Approve/Decline buttons
+            # instead of the user having to type "approve" by hand — a structured signal,
+            # not the UI trying to pattern-match the reply text for "Reply 'approve' to...".
+            return {
+                "reply": reply,
+                "model": "releaseforge-agent",
+                "diff": diff,
+                "awaiting_approval": awaiting_approval,
             }
-    else:
-        reply = result.get("reply", "(the agent finished without producing a reply)")
-        await _maybe_record_release(graph, config, req.workspace_path)
-
-    if redirected:
-        reply = f"(Stopped the previous change — starting this instead.)\n\n{reply}"
-
-    return {"reply": reply, "model": "deploygenie-agent", "diff": diff}
+        except Exception as exc:
+            record_exception(span, exc)
+            raise

@@ -1,9 +1,9 @@
 {
-  "name": "deploygenie",
-  "displayName": "DeployGenie AI",
+  "name": "releaseforge-ai",
+  "displayName": "ReleaseForge AI",
   "description": "Autonomous AI Release Engineering Platform",
   "version": "0.0.1",
-  "publisher": "deploygenie-local",
+  "publisher": "releaseforge-local",
   "repository": {
     "type": "git",
     "url": "https://github.com/111satwika/ReleaseForge-AI.git"
@@ -18,46 +18,60 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "deploygenie",
-          "title": "DeployGenie",
+          "id": "releaseforge",
+          "title": "ReleaseForge",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "deploygenie": [
+      "releaseforge": [
         {
           "type": "webview",
-          "id": "deploygenie.chatView",
+          "id": "releaseforge.chatView",
           "name": "Chat"
         }
       ]
     },
     "commands": [
       {
-        "command": "deploygenie.ping",
-        "title": "DeployGenie: Ping Backend"
+        "command": "releaseforge.ping",
+        "title": "ReleaseForge: Ping Backend"
       },
       {
-        "command": "deploygenie.restartBackend",
-        "title": "DeployGenie: Restart Backend"
+        "command": "releaseforge.restartBackend",
+        "title": "ReleaseForge: Restart Backend"
+      },
+      {
+        "command": "releaseforge.showDashboard",
+        "title": "ReleaseForge: Show Dashboard",
+        "icon": "$(graph)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "releaseforge.showDashboard",
+          "when": "view == releaseforge.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
-      "title": "DeployGenie",
+      "title": "ReleaseForge",
       "properties": {
-        "deploygenie.backendUrl": {
+        "releaseforge.backendUrl": {
           "type": "string",
           "default": "http://127.0.0.1:8420",
-          "description": "URL of the local DeployGenie Core backend."
+          "description": "URL of the local ReleaseForge AI Core backend."
         },
-        "deploygenie.backendDir": {
+        "releaseforge.backendDir": {
           "type": "string",
           "default": "",
           "scope": "application",
-          "description": "Path to the DeployGenie backend folder (the one containing app/main.py). Leave empty to be prompted once. User-level only, so an untrusted workspace can't redirect it."
+          "description": "Path to the ReleaseForge backend folder (the one containing app/main.py). Leave empty to be prompted once. User-level only, so an untrusted workspace can't redirect it."
         },
-        "deploygenie.pythonPath": {
+        "releaseforge.pythonPath": {
           "type": "string",
           "default": "",
           "scope": "application",
