@@ -769,6 +769,7 @@ async def deploy(state: AgentState) -> dict:
                 replicas=2,
                 strategy_type="RollingUpdate",
                 extra_labels={k8s_tools.APP_LABEL: app_name, k8s_tools.VERSION_LABEL: deploy_color},
+                container_name=app_name,
             )
             manifests = [deployment]
             if current_selector is None:
@@ -795,6 +796,7 @@ async def deploy(state: AgentState) -> dict:
                 replicas=1,
                 strategy_type="RollingUpdate",
                 extra_labels={k8s_tools.APP_LABEL: app_name, k8s_tools.VERSION_LABEL: "canary"},
+                container_name=app_name,
             )
             manifests = [deployment]
             stable_exists = await mcp.call_tool(

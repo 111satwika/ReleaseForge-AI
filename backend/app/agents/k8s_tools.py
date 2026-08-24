@@ -106,7 +106,17 @@ def build_deployment_manifest(
     replicas: int,
     strategy_type: str,
     extra_labels: dict[str, str] | None = None,
+    container_name: str | None = None,
 ) -> dict:
+    """container_name defaults to `name` (the Deployment's own resource name) — correct
+    for Recreate/Rolling, where the Deployment name already *is* the shared app name.
+    It's wrong for Blue-Green/Canary, whose Deployment name is a color/canary-suffixed
+    variant: a real live test caught this exact gap — promote_and_finish()'s Canary
+    branch always calls set_deployment_image(container_name=app_name), which needs
+    every strategy's container to actually be named that, not whatever this Deployment
+    resource happens to be called. graph.py passes container_name=app_name explicitly
+    for Blue-Green/Canary to fix that, rather than changing the assumption on the
+    calling side."""
     labels = {APP_LABEL: name, **(extra_labels or {})}
     spec: dict = {
         "replicas": replicas,
@@ -116,7 +126,7 @@ def build_deployment_manifest(
             "spec": {
                 "containers": [
                     {
-                        "name": name,
+                        "name": container_name or name,
                         "image": image,
                         "ports": [{"containerPort": port}],
                         "imagePullPolicy": "IfNotPresent",

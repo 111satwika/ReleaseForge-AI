@@ -88,6 +88,28 @@ def test_extra_labels_can_override_the_app_label_to_the_shared_app_name():
     assert manifest["spec"]["template"]["metadata"]["labels"][APP_LABEL] == "myapp"
 
 
+def test_container_name_defaults_to_the_deployment_resource_name():
+    manifest = build_deployment_manifest("app", "ns", "img:tag", 8080, replicas=1, strategy_type="Recreate")
+    assert manifest["spec"]["template"]["spec"]["containers"][0]["name"] == "app"
+
+
+def test_container_name_can_be_overridden_to_the_shared_app_name():
+    """Regression test for a second real bug the same live `kind` verification caught,
+    right after the extra_labels one above: build_deployment_manifest() named the
+    *container* after the Deployment's own resource name too (e.g. "myapp-green"), not
+    just the label. That's harmless on its own, but promote_and_finish()'s Canary branch
+    always calls set_deployment_image(container_name=app_name) — assuming every
+    strategy's container is named the shared app name — so a real Canary-after-Blue-
+    Green promotion failed outright with "unable to find container named 'myapp'"
+    against a real cluster. graph.py now passes container_name=app_name explicitly for
+    Blue-Green/Canary; this locks in that the parameter actually takes effect."""
+    manifest = build_deployment_manifest(
+        "myapp-green", "ns", "img:tag", 8080, replicas=1, strategy_type="RollingUpdate", container_name="myapp"
+    )
+    assert manifest["spec"]["template"]["spec"]["containers"][0]["name"] == "myapp"
+    assert manifest["metadata"]["name"] == "myapp-green"  # the Deployment resource name is untouched
+
+
 def test_build_service_manifest_targets_the_right_port():
     manifest = build_service_manifest("svc", "ns", 9000, {APP_LABEL: "app"})
     assert manifest["spec"]["ports"] == [{"port": 9000, "targetPort": 9000}]
