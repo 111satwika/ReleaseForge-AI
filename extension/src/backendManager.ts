@@ -59,13 +59,24 @@ async function runDeviceFlow(backendUrl: string): Promise<string | undefined> {
     interval: number;
   };
 
-  const action = await vscode.window.showInformationMessage(
-    `ReleaseForge needs you to sign in with GitHub. Enter this code: ${start.user_code}`,
-    'Open GitHub to sign in',
-  );
-  if (action === 'Open GitHub to sign in') {
-    void vscode.env.openExternal(vscode.Uri.parse(start.verification_uri));
-  }
+  // Real bug, found live: this used to `await` the notification's button click before
+  // ever starting to poll GitHub. A toast that faded into the notifications tray
+  // without being clicked left the whole flow — and the chat request behind it —
+  // hanging forever with no error and no indication anything needed the user's
+  // attention. Now: open the browser immediately, don't gate polling on a click at
+  // all, and let the notification's button just be a convenient way to re-open the
+  // page if the user closed the tab.
+  void vscode.env.openExternal(vscode.Uri.parse(start.verification_uri));
+  void vscode.window
+    .showInformationMessage(
+      `ReleaseForge needs you to sign in with GitHub. Enter this code: ${start.user_code}`,
+      'Open GitHub to sign in',
+    )
+    .then((action) => {
+      if (action === 'Open GitHub to sign in') {
+        void vscode.env.openExternal(vscode.Uri.parse(start.verification_uri));
+      }
+    });
 
   return vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Waiting for GitHub sign-in…' },
