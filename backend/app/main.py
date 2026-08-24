@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -22,6 +22,7 @@ from app.observability.tracing import get_tracer, record_exception, setup_tracin
 from app.rag.factory import get_graph_store, get_vector_store
 from app.rag.ingest import ingest_incident_record, ingest_project_docs, ingest_release_record
 from app.rag.reranker import hybrid_retrieve_reranked
+from app.security import oauth
 from app.security.audit import recent_audit_events
 
 logger = logging.getLogger(__name__)
@@ -100,8 +101,59 @@ async def health():
     return {"status": "ok"}
 
 
+async def require_auth(authorization: str | None = Header(default=None)) -> None:
+    """A real "prove you're a logged-in human" gate, built on request (see
+    app/security/oauth.py's module docstring for why this doesn't contradict
+    scopes.py's "OAuth is theater for one user" reasoning — this is authentication, not
+    multi-user authorization, and there's still only one real user). Every route below
+    except /health and the two /auth/device endpoints depends on this."""
+    try:
+        oauth.check_bearer_token(authorization)
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+
+class DevicePollRequest(BaseModel):
+    device_code: str
+
+
+@app.post("/auth/device/start")
+async def auth_device_start():
+    """Kicks off GitHub's Device Flow — returns the user_code/verification_uri the
+    extension shows the human, and the device_code it'll poll with next. No auth
+    required on this endpoint itself, obviously: nothing is authenticated yet."""
+    try:
+        data = await oauth.start_device_flow()
+    except (oauth.DeviceFlowError, Exception) as exc:
+        raise HTTPException(status_code=502, detail=f"Couldn't start GitHub device flow: {exc}")
+    return {
+        "device_code": data["device_code"],
+        "user_code": data["user_code"],
+        "verification_uri": data["verification_uri"],
+        "expires_in": data["expires_in"],
+        "interval": data["interval"],
+    }
+
+
+@app.post("/auth/device/poll")
+async def auth_device_poll(req: DevicePollRequest):
+    """One poll attempt per call — the caller is responsible for waiting the interval
+    /auth/device/start returned between calls, not this endpoint blocking on GitHub's
+    behalf for however long a human takes to click "Authorize"."""
+    result = await oauth.poll_once(req.device_code)
+    if result["status"] == "authenticated":
+        result["token"] = oauth.issued_token()
+    return result
+
+
+@app.post("/auth/sign_out")
+async def auth_sign_out():
+    oauth.sign_out()
+    return {"status": "ok"}
+
+
 @app.get("/eval/summary")
-async def eval_summary(workspace_path: str | None = None):
+async def eval_summary(workspace_path: str | None = None, _auth: None = Depends(require_auth)):
     """Design doc Section 16's "evaluate the complete platform," made real: agent
     completion rate, coding (test pass / review acceptance) rate, and deployment
     success/rollback rate, computed from actual ReleaseRecord history rather than
@@ -117,7 +169,7 @@ async def eval_summary(workspace_path: str | None = None):
 
 
 @app.post("/eval/faithfulness")
-async def eval_faithfulness(req: FaithfulnessCheckRequest):
+async def eval_faithfulness(req: FaithfulnessCheckRequest, _auth: None = Depends(require_auth)):
     """Design doc Section 16's faithfulness metric, the one rag_eval.py originally
     didn't attempt — closed after a real, live-observed retrieval-was-right-but-the-
     answer-still-drifted case (see the Phase 6 build-plan addendum). Re-retrieves the
@@ -137,7 +189,7 @@ async def eval_faithfulness(req: FaithfulnessCheckRequest):
 
 
 @app.get("/audit/log")
-async def audit_log(limit: int = 100, workspace_path: str | None = None):
+async def audit_log(limit: int = 100, workspace_path: str | None = None, _auth: None = Depends(require_auth)):
     """Design doc Section 14's "audit logs" requirement — every MCP tool call this
     backend has attempted, successful or not, including scope-denied attempts (an agent
     role reaching for a tool outside its least-privilege scope). See
@@ -161,7 +213,7 @@ async def audit_log(limit: int = 100, workspace_path: str | None = None):
 
 
 @app.get("/incidents")
-async def incidents(workspace_path: str, limit: int = 20):
+async def incidents(workspace_path: str, limit: int = 20, _auth: None = Depends(require_auth)):
     """Closes the "incident memory" gap flagged since Phase 5: every rollback's real
     root-cause analysis (Phase 4's Recovery agent), actually queryable now instead of
     existing only once, in the chat reply that first showed it."""
@@ -183,7 +235,7 @@ async def incidents(workspace_path: str, limit: int = 20):
 
 
 @app.post("/ping")
-async def ping(req: PingRequest):
+async def ping(req: PingRequest, _auth: None = Depends(require_auth)):
     llm = get_llm_provider()
     response = await llm.chat([LLMMessage(role="user", content=req.message)])
     return {
@@ -265,7 +317,7 @@ async def _maybe_record_release(graph, config: dict, workspace_path: str) -> Non
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest, request: Request):
+async def chat(req: ChatRequest, request: Request, _auth: None = Depends(require_auth)):
     tracer = get_tracer()
     with tracer.start_as_current_span("workflow.chat") as span:
         span.set_attribute("workspace_path", req.workspace_path)

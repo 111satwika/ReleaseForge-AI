@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { ensureBackendRunning, stopBackend } from './backendManager';
+import { authHeader, ensureAuthenticated, ensureBackendRunning, initAuth, stopBackend } from './backendManager';
 import { ChatViewProvider } from './chatViewProvider';
 import { DashboardPanel } from './dashboardPanel';
 import { RELEASEFORGE_DIFF_SCHEME, OriginalContentProvider } from './diffProvider';
 
 export function activate(context: vscode.ExtensionContext) {
+  initAuth(context);
   const originalContentProvider = new OriginalContentProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(RELEASEFORGE_DIFF_SCHEME, originalContentProvider),
@@ -35,9 +36,14 @@ export function activate(context: vscode.ExtensionContext) {
     const backendUrl = vscode.workspace.getConfiguration('releaseforge').get<string>('backendUrl');
 
     try {
+      const token = await ensureAuthenticated();
+      if (!token) {
+        vscode.window.showWarningMessage('ReleaseForge: sign-in was not completed.');
+        return;
+      }
       const res = await fetch(`${backendUrl}/ping`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ workspace_path: workspacePath }),
       });
       if (!res.ok) {

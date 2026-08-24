@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ensureBackendRunning } from './backendManager';
+import { authHeader, ensureAuthenticated, ensureBackendRunning } from './backendManager';
 import { OriginalContentProvider } from './diffProvider';
 
 interface ChatMessage {
@@ -77,9 +77,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
 
+      const token = await ensureAuthenticated();
+      if (!token) {
+        this.view?.webview.postMessage({
+          type: 'message',
+          role: 'assistant',
+          content: 'GitHub sign-in was not completed, so this request was not sent.',
+        });
+        return;
+      }
+
       const res = await fetch(`${backendUrl}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ workspace_path: workspacePath, messages: this.history }),
       });
       if (!res.ok) {

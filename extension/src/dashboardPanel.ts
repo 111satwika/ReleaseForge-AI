@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ensureBackendRunning } from './backendManager';
+import { authHeader, ensureAuthenticated, ensureBackendRunning } from './backendManager';
 
 interface EvalSummary {
   records_evaluated: number;
@@ -125,14 +125,21 @@ export class DashboardPanel {
         return;
       }
 
+      const token = await ensureAuthenticated();
+      if (!token) {
+        this.panel.webview.html = this.getErrorHtml('GitHub sign-in was not completed.');
+        return;
+      }
+      const auth = authHeader(token);
+
       const folders = vscode.workspace.workspaceFolders;
       const workspacePath = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
       const workspaceQuery = workspacePath ? `?workspace_path=${encodeURIComponent(workspacePath)}` : '';
       const workspaceParam = workspacePath ? `&workspace_path=${encodeURIComponent(workspacePath)}` : '';
 
       const [evalRes, auditRes] = await Promise.all([
-        fetch(`${backendUrl}/eval/summary${workspaceQuery}`),
-        fetch(`${backendUrl}/audit/log?limit=25${workspaceParam}`),
+        fetch(`${backendUrl}/eval/summary${workspaceQuery}`, { headers: auth }),
+        fetch(`${backendUrl}/audit/log?limit=25${workspaceParam}`, { headers: auth }),
       ]);
       if (!evalRes.ok || !auditRes.ok) {
         throw new Error(`Backend returned ${evalRes.status}/${auditRes.status}`);
@@ -144,7 +151,7 @@ export class DashboardPanel {
       // /eval/summary and /audit/log have) — nothing to fetch without an open folder.
       let incidents: Incident[] = [];
       if (workspacePath) {
-        const incidentsRes = await fetch(`${backendUrl}/incidents?limit=10${workspaceParam}`);
+        const incidentsRes = await fetch(`${backendUrl}/incidents?limit=10${workspaceParam}`, { headers: auth });
         if (!incidentsRes.ok) {
           throw new Error(`Backend returned ${incidentsRes.status} for /incidents`);
         }
@@ -170,9 +177,13 @@ export class DashboardPanel {
       if (!backendUp) {
         throw new Error("the backend isn't running");
       }
+      const token = await ensureAuthenticated();
+      if (!token) {
+        throw new Error('GitHub sign-in was not completed');
+      }
       const res = await fetch(`${backendUrl}/eval/faithfulness`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ question, answer }),
       });
       if (!res.ok) {

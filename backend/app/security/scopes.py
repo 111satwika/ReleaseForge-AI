@@ -1,11 +1,14 @@
 """Per-agent tool scoping — the design doc's Section 14 "Agents should have only the
-tools they need" table, made real. This project has no multi-user auth system yet (it's
-a single local backend behind a VS Code extension, not a multi-tenant service), so
-OAuth/OIDC/user-level RBAC would be security theater — there's no second user to scope
-away from. What genuinely applies here, and is genuinely enforceable, is restricting
-which of the 26 MCP tools each *agent role* can invoke, regardless of who's asking:
-a Coding Agent has no legitimate reason to ever call `delete_deployment`, so it can't,
-even if a prompt-injected file somehow tried to talk it into requesting that tool.
+tools they need" table, made real. This project is still a single local backend behind
+one VS Code extension, not a multi-tenant service, so *user-level RBAC* — different
+permissions for different accounts — is still correctly unbuilt: there's still only one
+real user, and giving that one user tiered permissions against themselves would be
+theater. What's genuinely enforceable at this scale, both here and via
+app/security/oauth.py's Device Flow gate in front of the whole HTTP surface, is: (1)
+proving a request comes from an authenticated human at all, and (2) restricting which of
+the 26 MCP tools each *agent role* can invoke, regardless of who's asking — a Coding
+Agent has no legitimate reason to ever call `delete_deployment`, so it can't, even if a
+prompt-injected file somehow tried to talk it into requesting that tool.
 
 Enforced client-side, in MCPClientManager.call_tool(), not inside the MCP servers
 themselves: these servers only ever talk to this one trusted local client over stdio
