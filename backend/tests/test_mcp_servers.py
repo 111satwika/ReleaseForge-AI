@@ -53,7 +53,7 @@ async def test_docker_server_registers_expected_tools():
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
-    assert {t.name for t in tools.tools} == {"run_docker_build"}
+    assert {t.name for t in tools.tools} == {"run_docker_build", "remove_docker_image"}
 
 
 @pytest.mark.asyncio

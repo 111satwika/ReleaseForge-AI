@@ -25,5 +25,14 @@ def run_docker_build(workspace_path: str, tag: str) -> dict:
     return {"ok": ok, "log": log}
 
 
+@server.tool()
+def remove_docker_image(tag: str) -> dict:
+    """Removes a tagged image — cleanup for throwaway verification builds, so a Dockerfile
+    change's real-build check (see graph.py's test()) doesn't leave images accumulating
+    on disk forever."""
+    ok, log = tools.remove_docker_image(tag)
+    return {"ok": ok, "log": log}
+
+
 if __name__ == "__main__":
     server.run()

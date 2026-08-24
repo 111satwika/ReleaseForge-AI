@@ -20,7 +20,7 @@ server-side auth layer would just be checking the same thing twice.
 FILESYSTEM_READ_WRITE = {"list_files", "read_file", "write_file"}
 FILESYSTEM_TEST = {"detect_test_command", "run_tests"}
 FILESYSTEM_GIT = {"current_branch", "commit_and_push", "push_fix_commit", "open_pull_request"}
-DOCKER_BUILD = {"run_docker_build"}
+DOCKER_BUILD = {"run_docker_build", "remove_docker_image"}
 KUBERNETES_DEPLOY = {
     "ensure_kind_cluster",
     "kind_load_image",
@@ -52,7 +52,13 @@ READINESS_CHECKS = {"check_dependencies", "run_security_scan", "check_cluster_re
 # select_deployment_strategy/deploy/validate/monitor/promote_and_finish, and so on.
 ROLE_SCOPES: dict[str, set[str]] = {
     "coding": FILESYSTEM_READ_WRITE,
-    "test": FILESYSTEM_TEST,
+    # DOCKER_BUILD is here too, not just under "build" — verifying a Dockerfile change
+    # actually builds is genuinely a testing concern (the same real-execution ground
+    # truth pytest/npm test already give application code), found live: a real Dockerfile
+    # change passed an LLM review twice while containing a COPY instruction referencing a
+    # source file that didn't exist anywhere in the repo — something `docker build` would
+    # have caught immediately and mechanically, see test() below.
+    "test": FILESYSTEM_TEST | DOCKER_BUILD,
     "publish": FILESYSTEM_GIT,
     "build": FILESYSTEM_READ_WRITE | {"has_dockerfile", "repo_name", "push_fix_commit"} | DOCKER_BUILD,
     "deployment": {"repo_name"} | KUBERNETES_DEPLOY,

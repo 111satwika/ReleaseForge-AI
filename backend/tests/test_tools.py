@@ -7,7 +7,8 @@ verified live instead and is documented in RELEASEFORGE_BUILD_PLAN.md, the same 
 unit tests for logic, live verification for the real tool" split run_docker_build's own
 tests already use (only its missing-Dockerfile path is unit-tested, not a real build)."""
 
-from app.agents.tools import check_dependencies, run_security_scan
+import app.agents.tools as tools_module
+from app.agents.tools import check_dependencies, remove_docker_image, run_security_scan
 
 
 def test_check_dependencies_with_no_manifest_reports_not_applicable(tmp_path):
@@ -25,3 +26,10 @@ def test_run_security_scan_with_no_python_files_reports_not_applicable(tmp_path)
     assert result["tool"] == "bandit"
     assert result["findings"] == 0
     assert "No Python files found to scan" in result["detail"]
+
+
+def test_remove_docker_image_reports_cleanly_when_docker_is_missing(monkeypatch):
+    monkeypatch.setattr(tools_module.shutil, "which", lambda name: None)
+    ok, detail = remove_docker_image("some-tag:test")
+    assert ok is False
+    assert "Docker isn't installed" in detail

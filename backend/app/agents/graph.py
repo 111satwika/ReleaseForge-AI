@@ -4,6 +4,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -321,6 +322,17 @@ def declined_at_code(state: AgentState) -> dict:
 async def test(state: AgentState) -> dict:
     workspace = state["workspace_path"]
     mcp = get_mcp_client()
+    target = state.get("target_file", "")
+
+    # A Dockerfile has no pytest/npm test equivalent, so "no test command found" used to
+    # mean zero real, executable verification before a human was asked to approve it —
+    # found live: a real task's code round added a COPY instruction referencing a source
+    # file that didn't exist anywhere in the repo. An LLM review caught a different, real
+    # problem in the same file but not that one; a real `docker build` attempt would have
+    # caught it immediately and mechanically, the same "real execution, not an opinion"
+    # ground truth application code already gets from run_tests below.
+    if Path(target).name == "Dockerfile":
+        return await _test_dockerfile_builds(workspace, mcp)
 
     cached_command = await memory.get_cached_test_command(workspace)
     if cached_command:
@@ -337,6 +349,20 @@ async def test(state: AgentState) -> dict:
     # the way calling subprocess.run() directly in-process would have.
     result = await mcp.call_tool("test", "run_tests", {"workspace_path": workspace, "command": command})
     return {"test_passed": result["passed"], "test_output": result["output"]}
+
+
+async def _test_dockerfile_builds(workspace: str, mcp) -> dict:
+    """A real, throwaway `docker build` — deliberately not the same tagged image
+    build_docker_image() creates for actual deployment later; this one is verification
+    only and gets removed immediately after, success or failure, so a Dockerfile-editing
+    task doesn't leave another tagged image on disk every single review round."""
+    tag = f"releaseforge-verify-{k8s_tools.sanitize_dns_label(Path(workspace).name)}:test"
+    result = await mcp.call_tool("test", "run_docker_build", {"workspace_path": workspace, "tag": tag})
+    await mcp.call_tool("test", "remove_docker_image", {"tag": tag})
+
+    if result["ok"]:
+        return {"test_passed": True, "test_output": f"Dockerfile builds successfully.\n{result['log'][-2000:]}"}
+    return {"test_passed": False, "test_output": f"docker build failed:\n{result['log'][-2000:]}"}
 
 
 def await_test_approval(state: AgentState) -> dict:

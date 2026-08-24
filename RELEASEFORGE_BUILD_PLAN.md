@@ -398,6 +398,18 @@ Not from a task list — the user actually used the finished product for real (a
 
 ---
 
+## Round 5 — a Dockerfile change now gets a real build check, not just an opinion
+
+Found by the user actually reading their own real task's output, on their own real `WebApp` repo. A Dockerfile change went through two full code/review rounds and still shipped with `COPY src/views/nginx-health /usr/share/nginx/html/nginx-health` — a source path that doesn't exist anywhere in the repo. `docker build` fails on that outright ("COPY failed: file not found in build context"). Neither review round caught it; the second round's review caught a *different*, also-real problem in the same file (a healthcheck-path mismatch) but not this one.
+
+**Root cause, diagnosed precisely, not guessed:** for application code, `test()` runs the repo's real test command — a hard, factual pass/fail. For a Dockerfile, there's no such thing; `detect_test_command()` correctly finds nothing to run, so `test_passed` was always `None` ("no test command found"), and the *only* verification a Dockerfile change ever got was an LLM reading the diff and reasoning about it. A real `docker build` doesn't happen until much later in the pipeline (`build_docker_image()`, after readiness approval) — a task stuck in the code/review loop never reaches it.
+
+**The fix:** `test()` now detects when `target_file` is a Dockerfile and runs a real, throwaway `docker build` instead of looking for a test command — the same "real execution, not an opinion" ground truth application code already gets. A new `remove_docker_image()` tool cleans the verification image up immediately after, success or failure, so a Dockerfile-editing task doesn't leave another tagged image on disk every single review round. Both new tools (`run_docker_build`, already existed; `remove_docker_image`, new) were added to the `test` role's scope — verifying a Dockerfile builds is a testing concern, distinct from `build_docker_image()`'s later, separate real build for actual deployment.
+
+**Verified two ways.** 6 new unit tests (pass/fail mapping, cleanup always running regardless of outcome, correct role usage) against a fake MCP client — 166 tests pass overall (up from 162). Then live-verified against the *exact* real failure: the real broken Dockerfile was reproduced byte-for-byte and run through the real `test()` node with a real `MCPClientManager` and a real `docker build` — it failed with the identical real error (`"/src/views/nginx-health": not found`), caught mechanically this time instead of needing a third review round that would never have come (the round cap was already hit). The corrected Dockerfile (the fix proposed and applied to the real `WebApp` repo) was verified the same way — builds successfully, `test_passed: True` — and `docker images` confirmed the throwaway verification image was actually removed after both runs, not left behind.
+
+---
+
 ## Concept coverage
 
 Every phase maps back to the design doc's Section 22 checklist — nothing in the original vision is dropped, only reordered:

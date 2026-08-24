@@ -216,6 +216,27 @@ def run_docker_build(workspace_path: str, tag: str, timeout: int = 300) -> tuple
         return False, f"Docker build timed out after {timeout}s."
 
 
+def remove_docker_image(tag: str, timeout: int = 30) -> tuple[bool, str]:
+    """Cleanup for throwaway verification builds (see test()'s Dockerfile-build check in
+    graph.py) — without this, every code/review round on a Dockerfile change would leave
+    another tagged image sitting on disk forever. Best-effort: a missing Docker install
+    or an already-gone image both return False rather than raising, since neither is
+    worth failing a test result over."""
+    if shutil.which("docker") is None:
+        return False, "Docker isn't installed, or `docker` isn't on PATH."
+    try:
+        result = subprocess.run(
+            ["docker", "rmi", "-f", tag],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+        return result.returncode == 0, ((result.stdout or "") + (result.stderr or "")).strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+
+
 def check_dependencies(workspace_path: str, timeout: int = 150) -> dict:
     """Real, tool-based dependency vulnerability check — pip-audit against a Python
     repo's requirements.txt, npm audit against a Node repo's package.json. Neither tool
