@@ -394,6 +394,8 @@ Not from a task list — the user actually used the finished product for real (a
 
 162 tests pass overall (up from 154).
 
+**Addendum — the same PATH-snapshot bug class, confirmed a fourth time, live, by the user's own real PR.** The task the user ran against their real `WebApp` repo finished with `open_pull_request()` falling back to a plain compare-URL link ("PR is still open: https://github.com/.../compare/...?expand=1") instead of creating the PR automatically, even though `gh` is genuinely installed and authenticated (set up earlier this session). Root cause, confirmed by reading `open_pull_request()` directly: it gates on `shutil.which("gh")`, the exact same PATH-existence check that already caused three other false negatives today — Docker (the build step), `pip-audit`, and `bandit`. Same explanation each time: Windows processes read `PATH` once at launch and never re-check it, and the VS Code window (and the backend it spawned) was already running before `gh` got installed. Not a code bug this time — `pip-audit`/`bandit` had an actual fix available (`sys.executable -m <module>`, since they're Python packages in this backend's own venv); `gh` is a genuinely separate CLI binary with no such trick, so the real fix is the same one already given for Docker: fully quit and reopen VS Code so the backend process re-reads the current PATH. Stated here as a real, repeated pattern worth naming precisely — four independent confirmations of the same root cause in one session is a stronger signal than any one of them alone, and a future session revisiting this environment should expect newly-installed CLI tools to need a full VS Code restart, not just a window reload, before this backend can see them.
+
 ---
 
 ## Concept coverage
