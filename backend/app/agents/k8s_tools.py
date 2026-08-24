@@ -288,6 +288,21 @@ def set_deployment_image(namespace: str, deployment_name: str, container_name: s
     return result.returncode == 0, _output(result)
 
 
+def check_cluster_reachable(timeout: int = 15) -> dict:
+    """The real infra-readiness signal release_readiness() was missing: is a Kubernetes
+    cluster actually reachable right now? Deliberately cluster-level, not namespace-
+    specific — this runs before select_deployment_strategy() has even computed this
+    app's namespace, so there's nothing more specific to check yet at this point in the
+    pipeline. Raises KubeToolMissingError (not a False result) when kubectl itself isn't
+    on PATH, same as every other function here — callers already know how to turn that
+    into an honest "couldn't run this check" rather than a fabricated pass or fail."""
+    _which_or_raise("kubectl")
+    result = _run(["kubectl", "cluster-info"], timeout=timeout)
+    reachable = result.returncode == 0
+    detail = "A Kubernetes cluster is reachable." if reachable else _output(result)[:500]
+    return {"reachable": reachable, "detail": detail}
+
+
 # ---------- strategy selection (deterministic, pure — no subprocess, no LLM) ----------
 
 

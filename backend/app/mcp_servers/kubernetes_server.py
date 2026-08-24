@@ -20,6 +20,15 @@ server = MCPServer(
 
 
 @server.tool()
+def check_cluster_reachable() -> dict:
+    """Real infra-readiness signal — closes the third of the three gaps
+    release_readiness() used to name as "not built yet." Cluster-level, not
+    namespace-specific: this runs before select_deployment_strategy() has even computed
+    the target namespace."""
+    return k8s_tools.check_cluster_reachable()
+
+
+@server.tool()
 def ensure_kind_cluster() -> dict:
     """Creates the shared local `kind` cluster if it doesn't already exist. Idempotent."""
     ok, message = k8s_tools.ensure_kind_cluster()

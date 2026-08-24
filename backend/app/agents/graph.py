@@ -506,30 +506,68 @@ def finish_unresolved(state: AgentState) -> dict:
     return {"reply": reply, "outcome": "review_unresolved"}
 
 
-def release_readiness(state: AgentState) -> dict:
-    """Deterministic, not an LLM guess — the score is only ever built from signals
-    ReleaseForge AI actually has (tests, review). No security/dependency/infra checks exist
-    yet, so it doesn't pretend to have run any."""
+def _partial_credit_line(label: str, ran: bool, clean: bool, points_if_clean: int, detail: str) -> tuple[int, str]:
+    """Shared scoring rule for the three real readiness checks below: full points when
+    the check actually ran and found nothing, zero when it ran and found something real,
+    half credit when it couldn't run at all (missing tool, no manifest, not applicable,
+    a real error) — "unknown" is deliberately worth something but always less than a
+    real clean result, never conflated with either "verified clean" or "known bad.\""""
+    if not ran:
+        half = points_if_clean // 2
+        return half, f"{label}: couldn't run — {detail} (+{half})"
+    if clean:
+        return points_if_clean, f"{label}: {detail} (+{points_if_clean})"
+    return 0, f"{label}: {detail} (+0)"
+
+
+async def release_readiness(state: AgentState) -> dict:
+    """Deterministic, not an LLM guess — every point traces to a real signal, three of
+    them (dependency check, security scan, infra reachability) now real tool calls
+    instead of "not built yet." Rebalanced from the original tests(50)+review(40)+risk(10)
+    split to make room: tests(35)+review(25)+risk(10)+dependencies(10)+security(10)+
+    infra(10), still 100 at the top."""
+    mcp = get_mcp_client()
+    workspace = state["workspace_path"]
     score = 0
     breakdown: list[str] = []
 
     if state.get("test_passed") is True:
-        score += 50
-        breakdown.append("Tests passed (+50)")
+        score += 35
+        breakdown.append("Tests passed (+35)")
     elif state.get("test_passed") is None:
-        score += 20
-        breakdown.append("No tests found to run (+20 — untested, not known to be broken)")
+        score += 15
+        breakdown.append("No tests found to run (+15 — untested, not known to be broken)")
     else:
         breakdown.append("Tests failed (+0)")
 
     if state.get("review_status") == "APPROVED":
-        score += 40
-        breakdown.append("Independent review approved (+40)")
+        score += 25
+        breakdown.append("Independent review approved (+25)")
 
     risk = state.get("review_risk", "Unknown")
     risk_points = {"Low": 10, "Medium": 5}.get(risk, 0)
     score += risk_points
     breakdown.append(f"Review risk: {risk} (+{risk_points})")
+
+    deps = await mcp.call_tool("readiness", "check_dependencies", {"workspace_path": workspace})
+    points, line = _partial_credit_line("Dependency check", deps["ran"], deps["vulnerabilities_found"] == 0, 10, deps["detail"])
+    score += points
+    breakdown.append(line)
+
+    security = await mcp.call_tool("readiness", "run_security_scan", {"workspace_path": workspace})
+    points, line = _partial_credit_line("Security scan", security["ran"], security["findings"] == 0, 10, security["detail"])
+    score += points
+    breakdown.append(line)
+
+    try:
+        infra = await mcp.call_tool("readiness", "check_cluster_reachable", {})
+        points, line = _partial_credit_line("Infrastructure readiness", True, infra["reachable"], 10, infra["detail"])
+    except RuntimeError as exc:
+        # kubectl missing entirely — the same graceful-degrade shape every other
+        # kubectl-dependent call in this codebase already uses, not a crash.
+        points, line = _partial_credit_line("Infrastructure readiness", False, False, 10, str(exc))
+    score += points
+    breakdown.append(line)
 
     return {
         "readiness_score": score,
@@ -544,8 +582,6 @@ def await_readiness_approval(state: AgentState) -> dict:
         f"Release Readiness: {state.get('readiness_score', 0)}/100\n"
         f"Recommendation: {state.get('readiness_recommendation', 'NO-GO')}\n"
         f"{breakdown}\n\n"
-        "This score only reflects tests and independent review — there's no security scan, "
-        "dependency check, or infrastructure readiness check built yet.\n\n"
         "Reply 'approve' to generate a Dockerfile (if one doesn't exist) and build a local "
         "image, or anything else to stop here — the PR stays open either way."
     )

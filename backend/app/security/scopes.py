@@ -40,6 +40,11 @@ KUBERNETES_DEPLOY = {
     "delete_deployment",
 }
 KUBERNETES_RECOVER = {"pod_logs", "describe_pods", "rollout_undo", "delete_deployment"}
+# Read-only inspection tools for release_readiness()'s three real checks — deliberately
+# its own narrow role, not folded into "build" or "deployment": a Readiness Agent has no
+# business reading/writing files, building images, or touching a cluster beyond
+# checking whether one is reachable.
+READINESS_CHECKS = {"check_dependencies", "run_security_scan", "check_cluster_reachable"}
 
 # Mirrors the design doc's table (Coding Agent -> GitHub + Filesystem + Terminal, etc.)
 # adapted to this project's actual graph nodes rather than the doc's more abstract
@@ -57,6 +62,7 @@ ROLE_SCOPES: dict[str, set[str]] = {
     # Deployment Agent's job, and giving Recovery the same power would defeat the point
     # of a separate, narrower role for the failure path.
     "recovery": KUBERNETES_RECOVER,
+    "readiness": READINESS_CHECKS,
 }
 
 

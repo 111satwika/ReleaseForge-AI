@@ -8,12 +8,16 @@ existing to pass."""
 import json
 import subprocess
 
+import pytest
+
 import app.agents.k8s_tools as k8s_tools_module
 from app.agents.k8s_tools import (
     APP_LABEL,
     VERSION_LABEL,
+    KubeToolMissingError,
     build_deployment_manifest,
     build_service_manifest,
+    check_cluster_reachable,
     decide_deployment_strategy,
     detect_container_port,
     patch_service_selector,
@@ -185,3 +189,35 @@ def test_patch_service_selector_uses_json_replace_not_merge_patch(monkeypatch):
     patch_arg = args[args.index("-p") + 1]
     patch_body = json.loads(patch_arg)
     assert patch_body == [{"op": "replace", "path": "/spec/selector", "value": {"app": "myapp"}}]
+
+
+# ---------- infra readiness check ----------
+
+
+def test_check_cluster_reachable_raises_when_kubectl_is_missing(monkeypatch):
+    monkeypatch.setattr(k8s_tools_module.shutil, "which", lambda name: None)
+    with pytest.raises(KubeToolMissingError):
+        check_cluster_reachable()
+
+
+def test_check_cluster_reachable_reports_true_on_success(monkeypatch):
+    monkeypatch.setattr(k8s_tools_module.shutil, "which", lambda name: "/usr/bin/kubectl")
+    monkeypatch.setattr(
+        k8s_tools_module, "_run", lambda args, timeout, input_text=None: subprocess.CompletedProcess(args, 0, stdout="Kubernetes control plane is running", stderr="")
+    )
+    result = check_cluster_reachable()
+    assert result["reachable"] is True
+
+
+def test_check_cluster_reachable_reports_false_when_kubectl_cannot_connect(monkeypatch):
+    """kubectl installed but no reachable cluster — a real, different outcome from
+    kubectl being missing entirely, and must be reported as such, not conflated."""
+    monkeypatch.setattr(k8s_tools_module.shutil, "which", lambda name: "/usr/bin/kubectl")
+    monkeypatch.setattr(
+        k8s_tools_module,
+        "_run",
+        lambda args, timeout, input_text=None: subprocess.CompletedProcess(args, 1, stdout="", stderr="The connection to the server localhost:8080 was refused"),
+    )
+    result = check_cluster_reachable()
+    assert result["reachable"] is False
+    assert "refused" in result["detail"]

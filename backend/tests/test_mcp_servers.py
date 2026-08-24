@@ -43,7 +43,7 @@ async def test_filesystem_server_registers_expected_tools():
     assert names == {
         "list_files", "read_file", "write_file", "has_dockerfile", "repo_name",
         "detect_test_command", "run_tests", "current_branch", "commit_and_push",
-        "push_fix_commit", "open_pull_request",
+        "push_fix_commit", "open_pull_request", "check_dependencies", "run_security_scan",
     }
 
 

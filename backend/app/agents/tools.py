@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "out", "dist", "build"}
@@ -213,3 +214,105 @@ def run_docker_build(workspace_path: str, tag: str, timeout: int = 300) -> tuple
         return False, "Docker isn't installed, or `docker` isn't on PATH."
     except subprocess.TimeoutExpired:
         return False, f"Docker build timed out after {timeout}s."
+
+
+def check_dependencies(workspace_path: str, timeout: int = 150) -> dict:
+    """Real, tool-based dependency vulnerability check — pip-audit against a Python
+    repo's requirements.txt, npm audit against a Node repo's package.json. Neither tool
+    is assumed installed; a missing tool or an unparseable result is reported honestly
+    as "couldn't run," never silently folded into "no vulnerabilities found" — those are
+    two different things, and collapsing them would be exactly the kind of dishonest
+    signal release_readiness() has avoided everywhere else.
+
+    150s default, not a guess: pip-audit genuinely took ~90s live against this project's
+    own requirements.txt (it queries a real vulnerability database per dependency, over
+    the network, for every package including transitive ones) — a 60s default failed
+    outright the first time this was actually run."""
+    requirements = Path(workspace_path) / "requirements.txt"
+    package_json = Path(workspace_path) / "package.json"
+
+    if requirements.exists():
+        # Invoked as `sys.executable -m pip_audit`, not a bare `pip-audit` command —
+        # found live: pip-audit is a Python package installed into this backend's own
+        # venv, and a venv's Scripts dir isn't on PATH for a subprocess unless the venv
+        # was actually activated first, which this backend never is (it's launched
+        # directly as `.venv/Scripts/python.exe -m uvicorn ...`). `shutil.which()`
+        # against a bare command name correctly found nothing and reported "not
+        # installed" even though it demonstrably was — the same class of "installed but
+        # not on this process's PATH" issue Docker Desktop hit earlier in this project,
+        # just one layer more specific (a venv-local tool, not a system-wide one).
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip_audit", "-r", str(requirements), "--format", "json"],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=timeout,
+            )
+            if "No module named" in (result.stderr or ""):
+                return {"ran": False, "tool": "pip-audit", "vulnerabilities_found": 0, "detail": "pip-audit isn't installed."}
+            data = json.loads(result.stdout or "[]")
+            packages = data if isinstance(data, list) else data.get("dependencies", [])
+            names = sorted({pkg["name"] for pkg in packages if pkg.get("vulns")})
+            count = sum(len(pkg.get("vulns", [])) for pkg in packages)
+            detail = f"{count} known vulnerabilit{'y' if count == 1 else 'ies'} in: {', '.join(names)}" if count else "No known vulnerabilities found."
+            return {"ran": True, "tool": "pip-audit", "vulnerabilities_found": count, "detail": detail}
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as exc:
+            return {"ran": False, "tool": "pip-audit", "vulnerabilities_found": 0, "detail": f"pip-audit failed to run: {exc}"}
+
+    if package_json.exists():
+        if shutil.which("npm") is None:
+            return {"ran": False, "tool": "npm audit", "vulnerabilities_found": 0, "detail": "npm isn't installed."}
+        try:
+            result = subprocess.run(
+                ["npm", "audit", "--json"],
+                cwd=workspace_path,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=timeout,
+            )
+            data = json.loads(result.stdout or "{}")
+            if "error" in data:
+                detail = data["error"].get("summary") or str(data["error"])
+                return {"ran": False, "tool": "npm audit", "vulnerabilities_found": 0, "detail": f"npm audit reported an error: {detail}"}
+            count = data.get("metadata", {}).get("vulnerabilities", {}).get("total", 0)
+            detail = f"{count} known vulnerabilit{'y' if count == 1 else 'ies'} reported by npm audit." if count else "No known vulnerabilities found."
+            return {"ran": True, "tool": "npm audit", "vulnerabilities_found": count, "detail": detail}
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as exc:
+            return {"ran": False, "tool": "npm audit", "vulnerabilities_found": 0, "detail": f"npm audit failed to run: {exc}"}
+
+    return {"ran": False, "tool": None, "vulnerabilities_found": 0, "detail": "No requirements.txt or package.json found — nothing to check."}
+
+
+def run_security_scan(workspace_path: str, timeout: int = 60) -> dict:
+    """Real static-analysis security scan via bandit — honestly scoped to Python: a repo
+    with no .py files correctly reports "nothing to scan," not a fake pass. Extending
+    this to other languages would need a different tool (e.g. semgrep) and wasn't
+    attempted here — stated plainly rather than pretending broader coverage exists."""
+    if not any(Path(workspace_path).rglob("*.py")):
+        return {"ran": False, "tool": "bandit", "findings": 0, "detail": "No Python files found to scan."}
+    try:
+        result = subprocess.run(
+            # sys.executable -m bandit, not a bare `bandit` command — same venv-not-on-
+            # PATH reasoning as pip-audit above. -q is separately load-bearing: without
+            # it bandit prints "[main] INFO ..." lines to stdout ahead of the JSON,
+            # found live — the very first run against this project's own code failed to
+            # parse for exactly that reason.
+            [sys.executable, "-m", "bandit", "-q", "-r", ".", "-f", "json", "--severity-level", "medium", "-x", ",".join(SKIP_DIRS)],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+        if "No module named" in (result.stderr or ""):
+            return {"ran": False, "tool": "bandit", "findings": 0, "detail": "bandit isn't installed."}
+        data = json.loads(result.stdout or "{}")
+        results = data.get("results", [])
+        count = len(results)
+        issues = sorted({r.get("test_name", "unknown") for r in results})
+        detail = f"{count} finding(s) at medium+ severity: {', '.join(issues)}" if count else "No medium+ severity findings."
+        return {"ran": True, "tool": "bandit", "findings": count, "detail": detail}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as exc:
+        return {"ran": False, "tool": "bandit", "findings": 0, "detail": f"bandit failed to run: {exc}"}

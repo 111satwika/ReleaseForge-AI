@@ -83,6 +83,23 @@ def run_tests(workspace_path: str, command: list[str] | None = None) -> dict:
 
 
 @server.tool()
+def check_dependencies(workspace_path: str) -> dict:
+    """Real dependency-vulnerability check (pip-audit / npm audit, whichever manifest
+    the repo actually has) — closes one of the three gaps release_readiness() used to
+    name as "not built yet." "ran": false means the check itself didn't happen (no
+    manifest, tool missing, or it errored) — distinct from "ran": true with zero
+    vulnerabilities found."""
+    return tools.check_dependencies(workspace_path)
+
+
+@server.tool()
+def run_security_scan(workspace_path: str) -> dict:
+    """Real static-analysis security scan (bandit, Python-only — see tools.py's
+    docstring for why). Same "ran" vs. "found nothing" distinction as check_dependencies."""
+    return tools.run_security_scan(workspace_path)
+
+
+@server.tool()
 def current_branch(workspace_path: str) -> str:
     return tools.current_branch(workspace_path)
 
