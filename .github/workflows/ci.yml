@@ -32,6 +32,38 @@ jobs:
         # manually and documented in RELEASEFORGE_BUILD_PLAN.md, not re-run here.
         run: python -m pytest tests/ -v
 
+  golden-set-prompt-gate:
+    name: Golden-set prompt freshness gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check whether prompts/ changed without a re-scored golden-set champion
+        # This job does NOT re-run the golden set here — there's no Ollama on a hosted
+        # GitHub Actions runner, and even if there were, 58 CPU-only LLM calls take tens
+        # of minutes locally (see eval/golden_set/run_reviewer_golden_set.py's own
+        # comment). The honest, fast check CI *can* do: if app/prompts/** changed, the
+        # committed champion.json must already reflect that exact prompt's hash — proving
+        # a human actually re-ran the golden set locally against a real model and
+        # committed the result, instead of editing a prompt with no re-verification at
+        # all. run_reviewer_golden_set.py --update-champion is itself what refuses to
+        # move the baseline forward if the critical-defect catch rate regressed more than
+        # 5 points — that's where the real regression gate lives, enforced at the point
+        # the number is actually produced, not faked here after the fact.
+        run: python -m eval.golden_set.run_reviewer_golden_set --check-champion-freshness
+
   extension-build:
     name: Extension build (TypeScript)
     runs-on: ubuntu-latest

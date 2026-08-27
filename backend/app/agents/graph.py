@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from string import Template
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -16,6 +17,7 @@ from app.llm.base import LLMMessage
 from app.llm.factory import get_llm_provider
 from app.mcp.factory import get_mcp_client
 from app.memory import repository as memory
+from app.prompts import load_prompt
 from app.rag.factory import get_graph_store, get_vector_store
 from app.rag.reranker import hybrid_retrieve_reranked
 
@@ -183,19 +185,10 @@ async def plan(state: AgentState) -> dict:
     cached_command = await memory.get_cached_test_command(workspace)
     project_context = f"This repo's test command is already known: `{cached_command}`.\n\n" if cached_command else ""
 
-    prompt = (
-        "You are the Planner in an AI release engineering pipeline. A user asked for a change "
-        "in their repository. Pick exactly ONE existing or new file to modify to satisfy the "
-        "request — keep this first change small and focused. If the file already appears in "
-        "the list below, copy its path EXACTLY as shown there — do not shorten it, guess it, "
-        "drop its folder, or guess a different extension than what similar files in this repo "
-        "actually use (e.g. a Vue project's pages are .vue files, not .html).\n\n"
-        + project_context
-        + f"User request: {state['user_message']!r}\n\n"
-        "Files currently in the repo (may be truncated):\n" + "\n".join(files) + "\n\n"
-        "Reply with ONLY a JSON object, no other text, shaped exactly like:\n"
-        '{"plan": "one or two sentence plan", "target_file": "relative/path.ext", '
-        '"change_description": "precise description of the change to make in that file"}'
+    prompt = Template(load_prompt("planner_v1")).substitute(
+        project_context=project_context,
+        user_message=repr(state["user_message"]),
+        files="\n".join(files),
     )
     response = await llm.chat([LLMMessage(role="user", content=prompt)])
     parsed = _extract_json(response.content)
@@ -469,20 +462,12 @@ async def review(state: AgentState) -> dict:
     else:
         test_status = "no tests found"
 
-    prompt = (
-        "You are an independent code reviewer, reviewing a pull request someone else opened. "
-        "You did not write this change — a separate Coding Agent did. Review it skeptically: "
-        "does it actually satisfy the request, is it correct, is it safe? Do not approve just "
-        "to be agreeable. If the test result is FAILED, you must request changes and list it "
-        "as critical.\n\n"
-        f"Requested change: {state.get('change_description', '')}\n\n"
-        f"File: {state.get('target_file', '')}\n\n"
-        "Before:\n```\n" + (state.get("original_content") or "(new file)") + "\n```\n\n"
-        "After:\n```\n" + state.get("new_content", "") + "\n```\n\n"
-        f"Test result: {test_status}\n\n"
-        "Reply with ONLY a JSON object, no other text, shaped exactly like:\n"
-        '{"status": "APPROVED" or "CHANGES_REQUESTED", "critical": ["..."], '
-        '"warnings": ["..."], "suggestions": ["..."], "risk": "Low", "Medium", or "High"}'
+    prompt = Template(load_prompt("review_agent_v1")).substitute(
+        change_description=state.get("change_description", ""),
+        target_file=state.get("target_file", ""),
+        before=state.get("original_content") or "(new file)",
+        after=state.get("new_content", ""),
+        test_status=test_status,
     )
     response = await llm.chat([LLMMessage(role="user", content=prompt)])
     parsed = _extract_json(response.content)

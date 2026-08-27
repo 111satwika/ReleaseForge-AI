@@ -1,0 +1,13 @@
+{
+  "prompt_name": "review_agent_v1",
+  "prompt_hash": "f98753bea32f4343",
+  "recorded_at": "2026-08-27T16:12:32.797164+00:00",
+  "model": "qwen2.5:7b-instruct",
+  "critical_catch_rate": 100.0,
+  "major_catch_rate": 38.9,
+  "minor_catch_rate": 50.0,
+  "overall_catch_rate": 66.7,
+  "false_positive_rate_per_100_lines": 8.65,
+  "precision": 75.7,
+  "recall": 66.7
+}
