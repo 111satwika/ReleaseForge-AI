@@ -50,7 +50,7 @@ MCP server  MCP server  MCP server      (each its own subprocess — real multi-
 
 ## Environment notes
 
-- **Ollama models available:** `qwen2.5:7b-instruct` (general reasoning/planning), `llama3.2:3b`, `llava:latest` (vision, unused so far). No code-specialized model pulled yet — `qwen2.5-coder:7b` is recommended once the Coding Agent needs real code edits.
+- **Ollama models available:** `qwen2.5:7b-instruct` (general reasoning/planning — plan/code/chat/recovery), `qwen2.5-coder:7b` (pulled in Round 7, used specifically by the Review Agent — see Round 7), `llama3.2:3b`, `llava:latest` (vision, unused so far).
 - **Docker Desktop:** not installed at all (an earlier note wrongly assumed it was, just not on PATH). `run_docker_build()` checks and fails clearly instead of crashing — see Phase 3.
 - **PostgreSQL:** not installed either, with no Docker available to containerize it — Phase 5's memory layer runs on SQLite instead, by design, with an easy swap path later (see Phase 5).
 - **GitHub CLI (`gh`):** not installed. `open_pull_request()` falls back to returning a GitHub compare URL (`.../compare/base...branch?expand=1`) instead of failing outright when `gh` is missing.
@@ -444,6 +444,38 @@ Requested directly, with a full spec: a labeled golden set of defect-injected di
 **CI gate** (`.github/workflows/ci.yml`, `golden-set-prompt-gate` job): deliberately does **not** re-run the golden set on a hosted GitHub Actions runner — there's no Ollama there, and 58 CPU-only calls take tens of minutes locally, well past any reasonable CI budget. Instead it runs `--check-champion-freshness`, a fast, free, no-network check: if `app/prompts/review_agent_v1.txt` changed, `champion.json`'s recorded `prompt_hash` must already match it, proving a human actually re-ran the golden set locally against a real model and committed the result — not that the number was re-verified in CI, but that shipping a prompt change without re-verifying it anywhere is now impossible to do silently.
 
 **Verified two ways.** 7 new fast unit tests (`tests/test_golden_set.py`) for the harness's pure logic — metrics math (TP/FN/FP/TN counting, precision/recall, false-positive-rate-per-100-lines, the "no clean fixtures means None not 0" distinction) and the champion-freshness check's three states (fresh / stale / never-recorded) — none needing Ollama, keeping the normal suite fast. 173 tests pass overall (up from 166). The real numbers above came from two live runs (~50 minutes for the full 58, then a ~5 minute targeted correction for the 6 affected fixtures) against the actual production `review()` code path.
+
+---
+
+## Round 7 — using the golden set to actually improve the Review Agent, and a real discovery about how much to trust any single run
+
+Direct follow-on to Round 6: given the baseline numbers (100% critical catch, but 66.7% recall and 8.65 false positives per 100 lines), asked to try improving them — first via prompt tuning, then via swapping to a coding-specialized model, each measured against the same golden set rather than assumed.
+
+**Prompt v2** (`app/prompts/review_agent_v2.txt`): added an explicit checklist of easy-to-miss defect classes (null-safety, off-by-one, injection, concurrency), a "verify before flagging, don't pattern-match" instruction to reduce hallucinated false positives, and explicit severity-calibration guidance (reserve "critical" for real problems, not edge-case polish). Against the same model (`qwen2.5:7b-instruct`): major catch rate 38.9% → 66.7%, recall 66.7% → 73.8%, precision 75.7% → 86.1%, false positives 8.65 → 4.81 per 100 lines — but critical catch rate slipped to 94.4%, a real, non-artifact regression: the model's actual response to the missed fixture was `"Suggestion: Add null safety checks for api_key and base_url"` — completely missing the hardcoded secret and inventing an unrelated, incorrect concern instead. Root cause, read directly from the checklist: v2 enumerated null-safety, off-by-one, injection, and concurrency, but never listed hardcoded secrets — the one category v1 had caught perfectly under just a general "is it safe?" instruction.
+
+**Coding-specialized model** (`qwen2.5-coder:7b`, pulled via `ollama pull`): same v2 prompt, different model. **Zero false positives across all 16 clean fixtures** (100% precision) — a real, striking result — but a different critical miss (a race condition the model's own feedback correctly described, then filed as a non-blocking suggestion and approved anyway: `"Consider using an atomic operation... to avoid race conditions"`, status APPROVED).
+
+**Prompt v3, an attempt to fix both misses, that made things worse instead of better:** added hardcoded secrets to the checklist and an explicit override — "security/concurrency findings are always critical, this calibration guidance does not apply to them." Tested against the coder model: critical catch rate dropped further, to 83.3% (3 misses, up from 1). Read the raw text before concluding anything: on one of the new misses, the model's feedback literally said `"Consider using an atomic operation to modify _available_order_slots to avoid race conditions"` — it detected the exact issue the v3 override was written to force-escalate, and didn't follow the instruction anyway. Real evidence that a 7B-class local model's instruction-following has a hard ceiling that more prompt text doesn't reliably move past — v3 was abandoned, not adopted.
+
+**The bigger discovery, forced by v3's confusing result: is any of this signal, or just noise?** Reran the exact same config (v2 prompt + coder model, no changes at all) two more times. Three runs of one identical configuration: **critical catch rate 94.4% / 83.3% / 100.0%** — a 16.7-point swing with nothing different between runs except the model's own sampling. That's larger than the 5-point regression tolerance the whole champion-gate mechanism was built around, meaning a single run could reject a genuinely fine change or accept a genuinely worse one purely on luck. Precision and false-positive rate, by contrast, were consistently strong across all three runs (93.8–100% precision, 0–1.92 FP/100 lines) — a real, trustworthy signal, not noise. Minor-catch-rate swung 0% to 100% across the same 3 runs (only 6 fixtures in that category — too small a sample to mean anything at all).
+
+**The harness was rebuilt around this finding rather than ignoring it.** `run_reviewer_golden_set.py` now supports `--num-runs N`, aggregating mean/min/max across N full runs instead of reporting one run as ground truth. `champion.json`'s schema changed from a flat number per metric to `{mean, min, max, n}`. `--update-champion` now hard-refuses (`REFUSING: --update-champion requires --num-runs >= 3`) unless at least 3 runs back it — encoding the lesson directly into the tool so a future single-run update can't happen by accident. The 3 runs already completed were reused to build the real, aggregated `champion.json` — no LLM calls spent re-deriving data already on disk.
+
+**Model selection scoped deliberately narrow.** The golden set only ever evaluated the Review Agent's behavior against `qwen2.5-coder:7b` — nothing about how it performs at planning, coding, or chat was tested. `get_llm_provider()` gained an optional `model` override parameter; `review()` resolves its own model via a new `RELEASEFORGE_REVIEW_MODEL` env var (default: `DEFAULT_REVIEW_MODEL = "qwen2.5-coder:7b"`), completely independent of the general `RELEASEFORGE_LLM_MODEL` every other node still uses. Adopting a better-measured model for one role didn't mean silently changing it for all of them.
+
+**Final, honestly-reported production numbers** (`review_agent_v2` + `qwen2.5-coder:7b`, mean of 3 runs, range in brackets):
+
+| Metric | Mean | Range |
+|---|---|---|
+| Critical catch rate | 92.6% | [83.3%, 100.0%] |
+| Major catch rate | 61.1% | [50.0%, 66.7%] |
+| Recall | 73.0% | [69.0%, 78.6%] |
+| Precision | 97.0% | [93.8%, 100.0%] |
+| False positives | 1.0 / 100 lines | [0.0, 1.92] |
+
+Adopted deliberately, tradeoff and all: real, substantial gains in precision and false-positive rate (the numbers that decide whether anyone keeps trusting the tool's flags) in exchange for a measured, disclosed dip in critical-catch reliability versus v1's clean 100% — a decision made with the actual range in front of it, not a cherry-picked single run.
+
+**Verified.** 3 new fast unit tests for `_aggregate_runs()` (mean/min/max math, the "None values don't count as zero" rule, the `--update-champion` min-runs refusal) — 176 tests pass overall (up from 173). The headline numbers above came from 6 separate live 58-fixture runs across this round (v1 re-confirmed, v2-same-model, v2-coder ×3, v3-coder) — real, repeated, CPU-only local inference, not a single lucky sample.
 
 ---
 

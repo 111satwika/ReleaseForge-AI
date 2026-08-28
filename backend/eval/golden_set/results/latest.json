@@ -1,17 +1,18 @@
 {
-  "model": "qwen2.5:7b-instruct",
+  "model": "qwen2.5-coder:7b",
+  "prompt_name": "review_agent_v2",
   "metrics": {
-    "critical_catch_rate": 100.0,
-    "major_catch_rate": 38.9,
-    "minor_catch_rate": 50.0,
-    "overall_catch_rate": 66.7,
-    "false_positive_rate_per_100_lines": 8.65,
-    "precision": 75.7,
-    "recall": 66.7,
-    "true_positives": 28,
-    "false_negatives": 14,
-    "false_positives": 9,
-    "true_negatives": 7,
+    "critical_catch_rate": 83.3,
+    "major_catch_rate": 66.7,
+    "minor_catch_rate": 100.0,
+    "overall_catch_rate": 78.6,
+    "false_positive_rate_per_100_lines": 0.96,
+    "precision": 97.1,
+    "recall": 78.6,
+    "true_positives": 33,
+    "false_negatives": 9,
+    "false_positives": 1,
+    "true_negatives": 15,
     "defect_count": 42,
     "clean_count": 16
   },
@@ -22,7 +23,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The SQL query is vulnerable to SQL injection attacks due to the use of string concatenation with user input.\nWarning: Consider using parameterized queries to prevent SQL injection.\nSuggestion: Update the function to use parameterized queries for security.",
+      "review_feedback": "Critical: SQL injection vulnerability due to unparameterized query",
       "caught": true,
       "false_positive": false
     },
@@ -32,7 +33,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: SQL Injection Vulnerability\nWarning: Function name misleading\nWarning: No error handling\nSuggestion: Use parameterized queries to prevent SQL injection\nSuggestion: Rename function to reflect actual behavior\nSuggestion: Add error handling",
+      "review_feedback": "Critical: SQL injection vulnerability\nSuggestion: Consider adding type hints for function parameters and return type",
       "caught": true,
       "false_positive": false
     },
@@ -42,7 +43,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: SQL Injection Vulnerability: The query construction directly concatenates the user input `name` into the SQL query, which makes the function vulnerable to SQL injection attacks.\nWarning: No error handling: The function does not handle possible errors from the database or the query execution.\nSuggestion: Use parameterized queries to prevent SQL injection. Consider using a library like SQLAlchemy for ORM if applicable.",
+      "review_feedback": "Critical: SQL or command injection from unparameterized/concatenated user input\nSuggestion: Consider using parameterized queries to prevent SQL injection",
       "caught": true,
       "false_positive": false
     },
@@ -52,7 +53,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: SQL Injection Vulnerability\nSuggestion: Use parameterized queries to prevent SQL injection",
+      "review_feedback": "Critical: SQL injection vulnerability: The code concatenates user input (`name`) directly into the SQL query, which can lead to SQL injection attacks.\nSuggestion: Consider using parameterized queries or ORM to avoid SQL injection risks.",
       "caught": true,
       "false_positive": false
     },
@@ -62,7 +63,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: SQL Injection Vulnerability\nWarning: Function Name Mismatch\nWarning: Resource Leakage\nSuggestion: Use parameterized queries to prevent SQL injection\nSuggestion: Rename function to get_session_by_id_or_name",
+      "review_feedback": "Critical: SQL command injection vulnerability due to direct string concatenation of user input",
       "caught": true,
       "false_positive": false
     },
@@ -72,7 +73,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: SQL Injection Vulnerability\nSuggestion: Use parameterized queries to prevent SQL injection",
+      "review_feedback": "Critical: SQL injection vulnerability: The query is constructed by concatenating user input directly into the SQL string, which allows SQL injection attacks.\nSuggestion: Consider using parameterized queries to prevent SQL injection.\nSuggestion: Add error handling around the database operation to manage potential exceptions.",
       "caught": true,
       "false_positive": false
     },
@@ -82,7 +83,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The API key is hard-coded into the client, which is a security risk.\nWarning: Consider using environment variables or a config file to manage the API key.\nSuggestion: Use a secure method to retrieve the API key, such as environment variables or a configuration file.",
+      "review_feedback": "Critical: The API key 'sk_live_51Hc9f3KzT9r2mNq8vXpL4jY7wRbA2eD6' should not be hardcoded in the source code. It should be read from an environment variable or another secure storage mechanism to prevent exposure.",
       "caught": true,
       "false_positive": false
     },
@@ -92,7 +93,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The API key should not be hardcoded in the code. It should be loaded from a secure environment variable or configuration file.\nSuggestion: Consider adding a method to update the API key and base URL dynamically.",
+      "review_feedback": "Critical: Hardcoded API key\nCritical: Lack of configuration for base URL\nSuggestion: Consider using environment variables for API keys\nSuggestion: Define a method to set the base URL",
       "caught": true,
       "false_positive": false
     },
@@ -102,7 +103,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The `api_key` should not be hard-coded into the source code. It should be loaded from an environment variable or configuration file.\nSuggestion: Consider using a configuration management tool like `.env` or a secrets management service.",
+      "review_feedback": "Critical: The API key is hardcoded directly in the source code. This exposes sensitive information and makes the code vulnerable to security risks. The API key should be read from an environment variable or a secure vault.",
       "caught": true,
       "false_positive": false
     },
@@ -112,7 +113,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The API key is hard-coded into the source code, which is a security risk. A secure method should be used to manage API keys and secrets.\nSuggestion: Use environment variables or a secrets manager to store sensitive information such as API keys.",
+      "review_feedback": "Critical: The use of a hardcoded API key is a security risk. It should be read from an environment variable or secure storage.\nSuggestion: Consider setting up a secure configuration system to manage sensitive information.",
       "caught": true,
       "false_positive": false
     },
@@ -121,9 +122,9 @@
       "defect_type": "hardcoded_secret",
       "severity": "critical",
       "line_count": 5,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The API key should not be hardcoded. It introduces a security risk and should be managed through a secure environment variable.\nSuggestion: Consider adding a method to update the API key and base URL dynamically.",
-      "caught": true,
+      "review_status": "APPROVED",
+      "review_feedback": "",
+      "caught": false,
       "false_positive": false
     },
     {
@@ -132,7 +133,7 @@
       "severity": "critical",
       "line_count": 5,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The `api_key` should not be hardcoded in the codebase. It should be loaded dynamically from a secure source.\nSuggestion: Consider adding a method to fetch the API key securely from an environment variable or a secrets manager.",
+      "review_feedback": "Critical: Hardcoding the API key directly in the code poses a security risk. It should be retrieved from an environment variable or a secure configuration source.\nSuggestion: Consider implementing a method to refresh the API key if it expires or if revocation is needed.",
       "caught": true,
       "false_positive": false
     },
@@ -141,9 +142,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "Suggestion: Consider adding type annotations for the function parameters and return type for better readability and maintainability.",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null/None safety: The code does not check if `record` or `record.owner` is None before accessing their attributes. This could lead to an AttributeError in production if the user does not have an owner.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -151,9 +152,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null/None safety: The code does not check if `record` or `record.owner` is None before accessing `record.owner.email`, which could lead to an AttributeError in production.\nSuggestion: Consider adding null/None safety checks to avoid potential runtime errors.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -161,9 +162,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null/None safety",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -171,9 +172,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "Suggestion: Consider adding a docstring to explain the function's purpose and parameters.",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not handle the case where `record` or `record.owner` could be None, which could lead to an AttributeError in production.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -181,9 +182,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not handle the case where `record.owner` or `record.owner.email` could be None. This will raise an AttributeError in production if any of these access paths are null.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -191,9 +192,9 @@
       "defect_type": "missing_null_check",
       "severity": "major",
       "line_count": 4,
-      "review_status": "APPROVED",
-      "review_feedback": "",
-      "caught": false,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null/None safety: The code accesses `record.owner.email` which could raise an AttributeError if `record` or `record.owner` is None.\nSuggestion: Add null/none safety checks to handle cases where `record` or `record.owner` might be None.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -202,8 +203,8 @@
       "severity": "major",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation is inefficient and can lead to errors. The current logic does not correctly handle the case when n is larger than the length of the list.\nWarning: The test cases only check for successful scenarios; additional edge cases need to be covered.\nSuggestion: Consider using list slicing for a more efficient and readable implementation.",
-      "caught": true,
+      "review_feedback": "Critical: The function calculates the last N items incorrectly. It starts from 1 and goes up to n, instead of starting from len(items) - n and going to the end.\nSuggestion: Consider using slicing to get the last N items more efficiently.",
+      "caught": false,
       "false_positive": false
     },
     {
@@ -212,8 +213,8 @@
       "severity": "major",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation is inefficient and does not utilize Python's slicing feature, which is optimized for this kind of operation.\nSuggestion: Consider implementing the function using slicing: `return items[-n:]`",
-      "caught": false,
+      "review_feedback": "Critical: Off-by-one error in loop: The current implementation will skip the first item due to the start index being 1.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -222,7 +223,7 @@
       "severity": "major",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation is inefficient. Using slicing directly would be much faster and more Pythonic.\nSuggestion: Consider using items[-n:] to achieve the same result in a single line.",
+      "review_feedback": "Critical: The code assumes that the input list `items` is non-empty, which is not checked. This could lead to an `IndexError` when `n` is greater than 0 but `items` is empty.\nSuggestion: Consider using slicing for `last_n` instead of a loop for better performance and readability.",
       "caught": false,
       "false_positive": false
     },
@@ -231,9 +232,9 @@
       "defect_type": "off_by_one",
       "severity": "major",
       "line_count": 6,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation logic is incorrect and does not actually return the last N items from the list.\nSuggestion: Fix the implementation to correctly return the last N items from the list.",
-      "caught": true,
+      "review_status": "APPROVED",
+      "review_feedback": "",
+      "caught": false,
       "false_positive": false
     },
     {
@@ -242,8 +243,8 @@
       "severity": "major",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation of `last_n` is inefficient and prone to errors. It should use slicing instead.\nSuggestion: Implement the function using slicing: `return items[-n:]`",
-      "caught": false,
+      "review_feedback": "Critical: The 'last_n' function does not correctly handle cases where 'n' is greater than the length of 'items', which could lead to an out-of-bounds error.\nSuggestion: Consider using slicing to simplify the function.\nSuggestion: Add a check to handle the case where 'n' is greater than the length of 'items'.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -252,8 +253,8 @@
       "severity": "major",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation of `last_n` is inefficient and incorrect. It should use slicing instead of a loop for better performance and correctness.\nWarning: The function name `last_n` is misleading. It should be `last_n_items` or similar.\nSuggestion: Implement the function using slicing: `return items[-n:]`.",
-      "caught": false,
+      "review_feedback": "Warning: The implementation of `last_n` uses a loop that starts from 1 and goes up to n, which is off-by-one. This will exclude the first item from the list.\nSuggestion: Consider using slicing to simplify the implementation.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -262,7 +263,7 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle potential JSON parsing errors, which could lead to unhandled exceptions.\nWarning: The function assumes the JSON structure is exactly as expected, which could cause issues if the structure changes.\nSuggestion: Consider adding error handling for JSON parsing exceptions and logging errors. Also, handle cases where required keys might be missing in the JSON data.",
+      "review_feedback": "Critical: The code does not handle the case where the JSON string is malformed or missing required keys, which could lead to errors or incorrect data.\nSuggestion: Consider adding logging to help with debugging in case of errors or unexpected inputs.\nSuggestion: Add docstrings to the function to clarify its purpose and parameters.",
       "caught": true,
       "false_positive": false
     },
@@ -272,8 +273,8 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle JSON parsing errors, which could lead to unexpected failures.\nWarning: The function hardcodes keys (`id` and `name`) which may break if the JSON structure changes. Consider making the function more flexible.\nSuggestion: Consider adding error handling for JSON parsing failures.",
-      "caught": false,
+      "review_feedback": "Critical: The function does not handle potential exceptions from json.loads, e.g., if the input is not a valid JSON string.\nSuggestion: Consider using a schema validation library like Pydantic to ensure the input JSON conforms to the expected structure.\nSuggestion: Add logging or error handling to provide feedback on any issues encountered during JSON parsing.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -282,7 +283,7 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle JSON decoding errors, which could lead to unhandled exceptions.\nWarning: The function currently returns a fixed dictionary. It would be more flexible to return the actual data structure as parsed by `json.loads`.\nSuggestion: Add error handling for JSON decoding failures.",
+      "review_feedback": "Critical: The function does not handle cases where the JSON data might be missing keys or be malformed, which could lead to a `KeyError` or `json.JSONDecodeError` in production.",
       "caught": true,
       "false_positive": false
     },
@@ -292,8 +293,8 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle cases where the JSON string is invalid or missing required fields.\nSuggestion: Consider adding error handling to manage JSON parsing failures and missing keys.",
-      "caught": false,
+      "review_feedback": "Critical: The function does not handle potential exceptions that can arise from `json.loads` if the input JSON is malformed.\nSuggestion: Add type annotations for the input and output parameters for better readability and documentation.",
+      "caught": true,
       "false_positive": false
     },
     {
@@ -302,7 +303,7 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: Function does not handle cases where the JSON string is malformed or missing required fields, risking data corruption or crashes.\nWarning: Consider adding more fields to the return dictionary to match the expected session data structure.\nSuggestion: Add error handling for JSON parsing failures.",
+      "review_feedback": "Critical: The function does not handle cases where the JSON string is invalid or missing required fields.\nCritical: The function does not have any null/None checks before accessing the JSON data, potentially leading to errors if the input is not as expected.\nSuggestion: Consider adding error handling to manage invalid JSON input.\nSuggestion: Add checks to ensure 'id' and 'name' are present in the JSON data to avoid key errors.",
       "caught": true,
       "false_positive": false
     },
@@ -312,7 +313,67 @@
       "severity": "minor",
       "line_count": 6,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: Function name does not accurately reflect its responsibility.\nWarning: Consider adding type hints for function parameters and return values.\nSuggestion: Add error handling for JSON parsing failures.",
+      "review_feedback": "Critical: The code does not handle cases where the JSON data might be incomplete or contain missing keys (e.g., `id` or `name`). This could lead to KeyError exceptions in production.\nSuggestion: Consider adding error handling to manage potential JSON parsing errors.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_user",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Off-by-one or boundary errors in loops: The loop over `ids` does not handle the case where `record.owner_id` might be None, leading to an error when querying for the owner.\nSuggestion: The function `list_users_with_owner` does not handle cases where a user record or owner record does not exist. This can lead to silent failures if not addressed.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_order",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The function `list_orders_with_owner` does not handle cases where `record.owner_id` might be `None`. This could lead to an SQL error.\nSuggestion: Consider using an ORM to handle the joining of `orders` and `users` to avoid raw SQL queries.\nSuggestion: Add type annotations to the function parameters and return type for better readability and maintainability.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_payment",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: SQL or command injection from unparameterized/concatenated user input\nSuggestion: Use parameterized queries to prevent SQL injection",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_inventory",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The function directly queries the database without proper handling for cases where `record.owner_id` could be None. This could lead to SQL errors.\nCritical: The loop does not utilize the `concurrent.futures` module or other means of concurrency, which could lead to performance bottlenecks if there are many inventory records.\nSuggestion: Consider adding type hints to the function parameters and return type for better code readability and maintenance.\nSuggestion: Implement checks for None values before accessing attributes to avoid potential AttributeError.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_session",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Off-by-one or boundary errors in loops, ranges, or slices. The second query to fetch the owner is not correctly handling the session's owner_id which could lead to an IndexError if the record.owner_id is None.\nSuggestion: Consider using a JOIN query to fetch both the session and the owner in a single query to improve performance and readability.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_invoice",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not attach the owner name to the invoice record. The current implementation fetches the owner's name but does not incorporate it into the invoice record itself.\nSuggestion: Consider using an ORM with proper eager loading to avoid multiple database queries, which could improve performance.",
       "caught": false,
       "false_positive": false
     },
@@ -322,7 +383,7 @@
       "severity": "critical",
       "line_count": 10,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle concurrency properly. Multiple concurrent requests can race to decrement the slot counter, leading to incorrect slot counts.\nWarning: The function does not have any logic to handle the case when all slots are reserved.\nSuggestion: Introduce a lock or atomic operation to ensure thread safety.\nSuggestion: Consider adding logging for debugging purposes.",
+      "review_feedback": "Critical: The function does not handle concurrent calls correctly, which could lead to multiple requests reserving the same slot. This is a concurrency issue.",
       "caught": true,
       "false_positive": false
     },
@@ -332,7 +393,7 @@
       "severity": "critical",
       "line_count": 10,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: Function does not actually reserve a slot, it merely decrements the counter without ensuring the slot is reserved.\nCritical: No concurrent safety measures are implemented, which can lead to race conditions.\nSuggestion: Implement a locking mechanism to ensure only one request reserves a slot at a time.\nSuggestion: Return the actual slot ID or an error in case of failure to reserve.",
+      "review_feedback": "Critical: The reserve_order_slot function modifies a shared mutable state without synchronization, which can lead to race conditions and incorrect results when called concurrently by multiple requests.\nSuggestion: Consider using a lock to synchronize access to the shared state to prevent race conditions and ensure correct behavior. Also, ensure that notify_reserved is not modifying the shared state inappropriately.",
       "caught": true,
       "false_positive": false
     },
@@ -341,9 +402,9 @@
       "defect_type": "race_condition",
       "severity": "critical",
       "line_count": 10,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not actually reserve a payment slot. It simply decrements the counter without ensuring mutual exclusion, which can lead to race conditions.\nSuggestion: Implement a thread-safe mechanism, such as a lock, to ensure that only one request can decrement the counter at a time.",
-      "caught": true,
+      "review_status": "APPROVED",
+      "review_feedback": "Warning: Using a global variable for shared mutable state without a lock or other concurrency control mechanism can lead to race conditions and other synchronization issues when the function is called concurrently.\nSuggestion: Consider using a thread-safe mechanism like a Lock or an AtomicInteger to ensure that the shared counter is accessed safely in a concurrent environment.",
+      "caught": false,
       "false_positive": false
     },
     {
@@ -352,7 +413,7 @@
       "severity": "critical",
       "line_count": 10,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle the race condition where multiple requests could potentially reserve the same slot concurrently.\nSuggestion: Consider using a lock or atomic operations to ensure only one request reserves a slot at a time.",
+      "review_feedback": "Critical: The function does not use any locking mechanism, which means it could lead to race conditions if called concurrently by multiple requests. This could cause multiple requests to succeed in reserving the same slot if they all check the availability at the same time.\nSuggestion: Consider adding a logging statement to monitor how quickly inventory slots are being reserved.",
       "caught": true,
       "false_positive": false
     },
@@ -361,9 +422,9 @@
       "defect_type": "race_condition",
       "severity": "critical",
       "line_count": 10,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The implementation does not handle concurrent access properly. Risk of race conditions and incorrect slot counting.\nSuggestion: Implement a lock mechanism to ensure thread safety.\nSuggestion: Add more logging for debugging.",
-      "caught": true,
+      "review_status": "APPROVED",
+      "review_feedback": "Critical: Concurrency issue: The global variable `_available_session_slots` is being modified without proper synchronization, which can lead to race conditions and incorrect session slot reservations.\nSuggestion: Consider using a lock or semaphore to synchronize access to the `_available_session_slots` variable.",
+      "caught": false,
       "false_positive": false
     },
     {
@@ -372,7 +433,7 @@
       "severity": "critical",
       "line_count": 10,
       "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: Function does not handle concurrent access properly, risking race conditions.\nCritical: No mechanism to update the slot count from external sources.\nSuggestion: Consider using locks or semaphores to safely decrement the slot count.\nSuggestion: Add a method to recharge invoice slots from an external source.",
+      "review_feedback": "Critical: Resource or concurrency issues: shared mutable state modified without a lock",
       "caught": true,
       "false_positive": false
     },
@@ -381,30 +442,30 @@
       "defect_type": null,
       "severity": null,
       "line_count": 5,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The `display_name` field should be validated to ensure it meets the necessary criteria (e.g., length, format).\nSuggestion: Consider adding a docstring to the `User` class to explain the purpose of the `display_name` field.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_parameterized_query",
       "defect_type": null,
       "severity": null,
       "line_count": 4,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle cases where the order with the given ID does not exist.\nWarning: The function relies on the database cursor to fetch a single row, which may raise an error if no row is found.\nSuggestion: Add error handling to manage cases where the order does not exist.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_env_var_secret",
       "defect_type": null,
       "severity": null,
       "line_count": 6,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The code does not handle the case where the environment variable is not set, which could lead to a runtime failure.\nSuggestion: Consider adding a default value or a check to handle missing environment variables.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_null_checked",
@@ -412,7 +473,7 @@
       "severity": null,
       "line_count": 6,
       "review_status": "APPROVED",
-      "review_feedback": "Suggestion: Consider adding type annotations for function and variables to improve code readability and maintainability.",
+      "review_feedback": "",
       "caught": false,
       "false_positive": false
     },
@@ -421,40 +482,40 @@
       "defect_type": null,
       "severity": null,
       "line_count": 5,
-      "review_status": "APPROVED",
-      "review_feedback": "Suggestion: Consider adding a type hint for the `items` parameter to specify that it should be a list.",
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: None\nSuggestion: Document the function and its parameters for better readability.",
       "caught": false,
-      "false_positive": false
+      "false_positive": true
     },
     {
       "id": "clean_try_except_import",
       "defect_type": null,
       "severity": null,
       "line_count": 9,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not handle cases where the JSON object lacks required fields, leading to potential errors.\nSuggestion: Consider adding more detailed error handling and logging for better traceability and debugging.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_batched_query",
       "defect_type": null,
       "severity": null,
       "line_count": 6,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The query concatenates user IDs directly into the SQL query, which can lead to SQL injection vulnerabilities.\nWarning: Consider adding type annotations for better code clarity.\nSuggestion: Use parameterized queries or a library like SQLAlquemy to prevent SQL injection.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_lock_protected_counter",
       "defect_type": null,
       "severity": null,
       "line_count": 13,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The current implementation does not handle the race condition properly. Concurrent calls might still lead to over-reservation of order slots.\nSuggestion: Consider using a semaphore or implementing a more robust concurrency mechanism such as a queue to manage order slots.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_add_docstring",
@@ -472,7 +533,7 @@
       "severity": null,
       "line_count": 6,
       "review_status": "APPROVED",
-      "review_feedback": "",
+      "review_feedback": "Suggestion: The variable name 'x' was confusing. Renaming it to 'total' increases readability.",
       "caught": false,
       "false_positive": false
     },
@@ -482,7 +543,7 @@
       "severity": null,
       "line_count": 5,
       "review_status": "APPROVED",
-      "review_feedback": "",
+      "review_feedback": "Suggestion: Consider adding type hints for variables like `session` and `now` within the function for clarity.",
       "caught": false,
       "false_positive": false
     },
@@ -502,7 +563,7 @@
       "severity": null,
       "line_count": 9,
       "review_status": "APPROVED",
-      "review_feedback": "Suggestion: Consider adding a docstring to explain the logging purpose",
+      "review_feedback": "",
       "caught": false,
       "false_positive": false
     },
@@ -511,89 +572,29 @@
       "defect_type": null,
       "severity": null,
       "line_count": 6,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The validation does not check for valid email format thoroughly. A stripped email like 'test@   .com' would pass the validation but still be invalid.\nSuggestion: Consider using a more robust email validation method, such as regex or a dedicated library.",
+      "review_status": "APPROVED",
+      "review_feedback": "",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_add_index_field",
       "defect_type": null,
       "severity": null,
       "line_count": 7,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The `datetime.now(timezone.utc)` call should be replaced with a less error-prone initialization method. Consider using `timezone.utc.localize(datetime.utcnow())` or `timezone.utc.fromtimestamp(timezone.utc.localize(int(time.time())).timestamp())`.",
+      "review_status": "APPROVED",
+      "review_feedback": "Suggestion: Consider adding a docstring to explain the purpose and usage of the `created_at` field.",
       "caught": false,
-      "false_positive": true
+      "false_positive": false
     },
     {
       "id": "clean_test_only_change",
       "defect_type": null,
       "severity": null,
       "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The change request to reduce the retry count from 5 to 3 for a flaky external call without additional context or validation is too risky. This could potentially lead to service disruptions if the call becomes even more flaky or if the service depends heavily on retries.\nWarning: Consider adding a rollback mechanism or a safeguard to monitor the impact of this change.\nSuggestion: Add a rationale or justification for why the retry count should be reduced to 3. Include monitoring or A/B testing plans to validate the change.",
+      "review_status": "APPROVED",
+      "review_feedback": "Suggestion: Consider adding a comment to explain why the retry count was reduced.",
       "caught": false,
-      "false_positive": true
-    },
-    {
-      "id": "n_plus_one_user",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The query to fetch the owner's name is redundant and can be inefficient. It makes two database queries per user instead of one.\nSuggestion: Consider joining the tables in a single query to fetch both the user and the owner in one go.",
-      "caught": true,
-      "false_positive": false
-    },
-    {
-      "id": "n_plus_one_order",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function query the database twice for each order, which is inefficient and could lead to performance issues.\nSuggestion: Consider optimizing the database query to fetch both the order and its owner in a single query if possible.",
-      "caught": true,
-      "false_positive": false
-    },
-    {
-      "id": "n_plus_one_payment",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not actually return a list of payment records with the owner's name attached. Instead, it returns tuples of (payment_record, owner_name).\nWarning: The function performs two separate database queries for each payment ID, which can be inefficient. Consider joining the payments and users tables in a single query.\nSuggestion: Optimize the function to reduce the number of database queries by using a JOIN statement. This will improve performance and prevent potential race conditions.",
-      "caught": true,
-      "false_positive": false
-    },
-    {
-      "id": "n_plus_one_inventory",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function now makes two database queries per inventory ID, which is inefficient and can lead to performance issues, especially with large IDs lists.\nSuggestion: Consider optimizing the query to join the necessary tables or make use of database relationships to minimize the number of queries.",
-      "caught": true,
-      "false_positive": false
-    },
-    {
-      "id": "n_plus_one_session",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function does not actually return a list of session records with each one's owner name attached. The current implementation returns tuples of (session, owner) which doesn't meet the request.\nSuggestion: Modify the function to return a list of dictionaries or session objects that include the owner's name directly.",
-      "caught": false,
-      "false_positive": false
-    },
-    {
-      "id": "n_plus_one_invoice",
-      "defect_type": "n_plus_one_query",
-      "severity": "major",
-      "line_count": 8,
-      "review_status": "CHANGES_REQUESTED",
-      "review_feedback": "Critical: The function fetches data twice for each invoice, leading to inefficient querying. This could be optimized.\nWarning: Consider using parameterized queries to prevent SQL injection.\nSuggestion: Optimize the function to reduce the number of queries by fetching the owner's name in a single query.",
-      "caught": true,
       "false_positive": false
     }
   ]

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -30,6 +31,17 @@ logger = logging.getLogger(__name__)
 
 AFFIRMATIVE = {"yes", "y", "approve", "approved", "go ahead", "ship it", "do it", "lgtm", "ok", "okay"}
 MAX_REVIEW_ROUNDS = 2
+# Chosen by the golden-set A/B in eval/golden_set/ (see RELEASEFORGE_BUILD_PLAN.md Round
+# 7): review_agent_v2 + qwen2.5-coder:7b scored 0% false positives across all 16 clean
+# golden-set fixtures (vs 8.65/100 lines for the prior v1+general-model default) and
+# better overall recall/precision, at the cost of one known critical-severity miss out of
+# 18 critical fixtures. A v3 prompt attempted to close that gap and measurably made it
+# worse — evidence this 7B-class model's instruction-following has a real ceiling, not
+# something more prompt text reliably fixes. Deliberately scoped to review() only, not the
+# other graph nodes — only the Review Agent's behavior was ever evaluated against this
+# model; plan()/code()/chat() still use the general RELEASEFORGE_LLM_MODEL default.
+DEFAULT_REVIEW_PROMPT = "review_agent_v2"
+DEFAULT_REVIEW_MODEL = "qwen2.5-coder:7b"
 
 
 def is_affirmative(text: str) -> bool:
@@ -451,8 +463,13 @@ def route_after_publish(state: AgentState) -> str:
     return "end" if state.get("reply") else "review"
 
 
-async def review(state: AgentState) -> dict:
-    llm = get_llm_provider()
+async def review(state: AgentState, prompt_name: str = DEFAULT_REVIEW_PROMPT) -> dict:
+    # prompt_name defaults to the current production champion — only the golden-set
+    # harness (run_reviewer_golden_set.py) ever passes a different version, so it can
+    # A/B a candidate prompt through this exact real code path before graph.py's default
+    # is ever changed. Production behavior is unaffected until that default itself moves.
+    review_model = os.getenv("RELEASEFORGE_REVIEW_MODEL", DEFAULT_REVIEW_MODEL)
+    llm = get_llm_provider(model=review_model)
     round_num = state.get("review_round", 0) + 1
 
     if state.get("test_passed") is True:
@@ -462,7 +479,7 @@ async def review(state: AgentState) -> dict:
     else:
         test_status = "no tests found"
 
-    prompt = Template(load_prompt("review_agent_v1")).substitute(
+    prompt = Template(load_prompt(prompt_name)).substitute(
         change_description=state.get("change_description", ""),
         target_file=state.get("target_file", ""),
         before=state.get("original_content") or "(new file)",

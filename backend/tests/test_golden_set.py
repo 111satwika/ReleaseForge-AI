@@ -71,7 +71,7 @@ def test_compute_metrics_zero_false_positives_gives_zero_not_none():
 
 def test_check_champion_freshness_passes_when_hash_matches(monkeypatch, tmp_path):
     champion_path = tmp_path / "champion.json"
-    real_hash = reviewer_harness.prompt_hash(reviewer_harness.PROMPT_NAME)
+    real_hash = reviewer_harness.prompt_hash(reviewer_harness.DEFAULT_PROMPT_NAME)
     champion_path.write_text(json.dumps({"prompt_hash": real_hash}), encoding="utf-8")
     monkeypatch.setattr(reviewer_harness, "CHAMPION_PATH", champion_path)
 
@@ -92,3 +92,46 @@ def test_check_champion_freshness_passes_when_no_champion_recorded_yet(monkeypat
     monkeypatch.setattr(reviewer_harness, "CHAMPION_PATH", champion_path)
 
     assert reviewer_harness._check_champion_freshness() == 0
+
+
+def test_aggregate_runs_computes_mean_min_max():
+    # The exact real observation that motivated this function: 3 identical-config runs of
+    # this model swung critical catch rate from 83.3% to 100.0% — a single run isn't a
+    # trustworthy number, so the harness reports a range instead of pretending otherwise.
+    runs = [
+        {"critical_catch_rate": 94.4, "major_catch_rate": 50.0, "minor_catch_rate": 50.0,
+         "overall_catch_rate": 69.0, "false_positive_rate_per_100_lines": 0.0, "precision": 100.0, "recall": 69.0},
+        {"critical_catch_rate": 83.3, "major_catch_rate": 66.7, "minor_catch_rate": 100.0,
+         "overall_catch_rate": 78.6, "false_positive_rate_per_100_lines": 0.96, "precision": 97.1, "recall": 78.6},
+        {"critical_catch_rate": 100.0, "major_catch_rate": 66.7, "minor_catch_rate": 0.0,
+         "overall_catch_rate": 71.4, "false_positive_rate_per_100_lines": 1.92, "precision": 93.8, "recall": 71.4},
+    ]
+    aggregated = reviewer_harness._aggregate_runs(runs)
+
+    assert aggregated["critical_catch_rate"]["min"] == 83.3
+    assert aggregated["critical_catch_rate"]["max"] == 100.0
+    assert aggregated["critical_catch_rate"]["mean"] == round((94.4 + 83.3 + 100.0) / 3, 1)
+    assert aggregated["critical_catch_rate"]["n"] == 3
+
+
+def test_aggregate_runs_skips_none_values_instead_of_treating_as_zero():
+    runs = [
+        {"minor_catch_rate": None, "critical_catch_rate": 100.0, "major_catch_rate": 50.0,
+         "overall_catch_rate": 80.0, "false_positive_rate_per_100_lines": 0.0, "precision": 100.0, "recall": 80.0},
+        {"minor_catch_rate": None, "critical_catch_rate": 100.0, "major_catch_rate": 50.0,
+         "overall_catch_rate": 80.0, "false_positive_rate_per_100_lines": 0.0, "precision": 100.0, "recall": 80.0},
+    ]
+    aggregated = reviewer_harness._aggregate_runs(runs)
+
+    assert aggregated["minor_catch_rate"] == {"mean": None, "min": None, "max": None, "n": 0}
+    assert aggregated["critical_catch_rate"]["n"] == 2
+
+
+def test_main_refuses_update_champion_with_too_few_runs(monkeypatch, capsys):
+    monkeypatch.setattr(
+        reviewer_harness.sys, "argv",
+        ["run_reviewer_golden_set.py", "--update-champion", "--num-runs", "1"],
+    )
+    exit_code = reviewer_harness.main()
+    assert exit_code == 1
+    assert "REFUSING" in capsys.readouterr().out

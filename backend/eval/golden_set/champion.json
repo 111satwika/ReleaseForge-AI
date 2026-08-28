@@ -1,13 +1,49 @@
 {
-  "prompt_name": "review_agent_v1",
-  "prompt_hash": "f98753bea32f4343",
-  "recorded_at": "2026-08-27T16:12:32.797164+00:00",
-  "model": "qwen2.5:7b-instruct",
-  "critical_catch_rate": 100.0,
-  "major_catch_rate": 38.9,
-  "minor_catch_rate": 50.0,
-  "overall_catch_rate": 66.7,
-  "false_positive_rate_per_100_lines": 8.65,
-  "precision": 75.7,
-  "recall": 66.7
+  "prompt_name": "review_agent_v2",
+  "prompt_hash": "4192370dfabe033f",
+  "recorded_at": "2026-08-28T09:13:45.654080+00:00",
+  "model": "qwen2.5-coder:7b",
+  "num_runs": 3,
+  "critical_catch_rate": {
+    "mean": 92.6,
+    "min": 83.3,
+    "max": 100.0,
+    "n": 3
+  },
+  "major_catch_rate": {
+    "mean": 61.1,
+    "min": 50.0,
+    "max": 66.7,
+    "n": 3
+  },
+  "minor_catch_rate": {
+    "mean": 50.0,
+    "min": 0.0,
+    "max": 100.0,
+    "n": 3
+  },
+  "overall_catch_rate": {
+    "mean": 73.0,
+    "min": 69.0,
+    "max": 78.6,
+    "n": 3
+  },
+  "false_positive_rate_per_100_lines": {
+    "mean": 1.0,
+    "min": 0.0,
+    "max": 1.92,
+    "n": 3
+  },
+  "precision": {
+    "mean": 97.0,
+    "min": 93.8,
+    "max": 100.0,
+    "n": 3
+  },
+  "recall": {
+    "mean": 73.0,
+    "min": 69.0,
+    "max": 78.6,
+    "n": 3
+  }
 }
