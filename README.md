@@ -2,7 +2,7 @@
 
 An autonomous release-engineering agent for VS Code, for developers who want to hand off a small, well-defined change and review the result rather than write it by hand: describe a change in plain English, and a LangGraph pipeline plans it, writes it, tests it, gets it independently reviewed by a second LLM call, opens a PR, scores it for release readiness, and deploys it to Kubernetes — with a human approval gate at every stage.
 
-![The ReleaseForge sidebar chat panel in a real VS Code Extension Development Host](docs/screenshot-sidebar.png)
+![A real task in ReleaseForge AI: a request, plan approval, and the resulting diff shown side by side in VS Code's native diff editor](docs/screenshot-sidebar.png)
 
 ## Results
 
@@ -125,7 +125,7 @@ Obvious approach: keep prompts as f-strings inside the node functions that use t
 - **Cloud deployment (AWS) is not implemented.** Deliberately deferred — it needs real cloud credentials and incurs real billed cost, which wasn't authorized. Kubernetes deployment is real, but only against a local `kind` cluster.
 - **Minor-defect catch rate is not a reliable number at n=6** (see above) — reported anyway, with the caveat, rather than dropped.
 - **Planner eval grading has known false-negative failure modes.** Substring-keyword matching sometimes fails to credit a correct plan that's phrased differently than expected (documented example in `RELEASEFORGE_BUILD_PLAN.md`, Round 6).
-- **The full in-editor approval-click flow hasn't been driven end-to-end programmatically.** The sidebar chat view has been verified live in a real Extension Development Host (screenshot above) — it loads, connects to the backend, and renders correctly. Actually submitting a task through it and watching a diff appear was attempted but not completed: automated UI interaction (Playwright/UI Automation) couldn't reliably drive VS Code's webview inputs in this environment, and a full run also costs several real LLM calls (~1–5 min). A human clicking through it directly has no such obstacle.
+- **The full in-editor approval-click flow has been verified manually, not by an automated test.** The screenshot above is from a real run: a request typed into the sidebar, a plan approval, and the resulting diff opening in VS Code's native diff editor. Automated UI-driving (Playwright/UI Automation) was also attempted separately and couldn't reliably operate VS Code's webview inputs in this environment — that gap is about test automation coverage, not about whether the feature itself works.
 - **Single-user tool, not multi-tenant.** GitHub OAuth Device Flow gates the API (proving a request comes from an authenticated human), but role scoping (`scopes.py`) is per-agent, not per-account — there's deliberately no user-level RBAC, since there's only ever one real user.
 
 ## Quickstart
