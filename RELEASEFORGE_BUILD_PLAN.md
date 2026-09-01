@@ -513,7 +513,7 @@ Every phase maps back to the design doc's Section 22 checklist — nothing in th
 | Cross-encoder reranking | Round 2 — LLM-prompted reranking (`app/rag/reranker.py`); no literal cross-encoder model is reachable from this Ollama-only stack, named honestly rather than mislabeled |
 | MCP client/server, tools, tool discovery, multi-server orchestration | Phase 7 |
 | MCP resources, prompts, formal permission scoping | Permission scoping: Phase 9. Resources/Prompts: Round 2 (`observability_server.py`) |
-| Observability, evaluation, cost/latency tracking | Phase 8 + Round 2 (mean time to recovery, cost estimation ahead of a paid provider existing) |
+| Observability, evaluation, cost/latency tracking | Phase 8 + Round 2 (mean time to recovery, cost estimation) — the cost signal it computes went from theoretical to real in Round 9, once a real paid provider (OpenAI) existed to actually spend against |
 | Security, RBAC, audit logs | Phase 9 |
 | CI/CD | Phase 10 |
 | Cloud (AWS) | Not yet — deliberately deferred, needs the user's real AWS credentials and consent to real cost (see Phase 10) |

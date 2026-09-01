@@ -21,7 +21,7 @@ This is a mixed result, shown as measured: precision and false-positive rate imp
 
 **Planner Agent, evaluated on 18 fixtures** (`backend/eval/golden_set/planner_dataset.py`) covering three real historical bug classes: 17/18 (94.4%) — a clean 13/13 on target-file selection, file-extension convention, and scope discipline; the one failure was a correct plan phrased in a way a substring-matching grader didn't credit (documented, not hidden — see [Known limitations](#known-limitations)).
 
-**176 automated tests pass in CI** (`backend/tests/`, run via `.github/workflows/ci.yml`), 7 of them exercising the eval harness's own scoring logic.
+**185 automated tests pass in CI** (`backend/tests/`, run via `.github/workflows/ci.yml`), 23 of them exercising the eval harness's scoring logic and the LLM provider/factory/cost wiring.
 
 Source of truth for every number above: [`backend/eval/golden_set/champion.json`](backend/eval/golden_set/champion.json) (the recorded baseline) and the raw per-fixture output it's built from, in [`backend/eval/golden_set/results/`](backend/eval/golden_set/results/).
 
@@ -57,7 +57,7 @@ flowchart LR
         K8S["kubernetes_server\n15 tools"]
     end
 
-    LLM["Ollama\n(local, OpenAI-compatible API)"]
+    LLM["Ollama or OpenAI\n(pluggable via LLMProvider)"]
     Cluster["kind (local Kubernetes)"]
 
     Chat -- HTTP :8420 --> API
@@ -130,14 +130,17 @@ Obvious approach: keep prompts as f-strings inside the node functions that use t
 
 ## Quickstart
 
-Requires: Python 3.12, Node 18+, [Ollama](https://ollama.com) running locally with `qwen2.5:7b-instruct`, `qwen2.5-coder:7b`, and `nomic-embed-text` pulled.
+Requires: Python 3.12, Node 18+, and one LLM provider:
+
+- **Ollama (default, free, local)** — [install it](https://ollama.com), then pull `qwen2.5:7b-instruct`, `qwen2.5-coder:7b`, and `nomic-embed-text`.
+- **OpenAI (real API cost)** — set `RELEASEFORGE_LLM_PROVIDER=openai` and `OPENAI_API_KEY` as environment variables. No local model download; `app/llm/factory.py` picks this up automatically.
 
 ```bash
 # Backend
 cd backend
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python -m pytest tests/ -q          # 176 tests, no live LLM needed
-.venv/Scripts/python -m eval.golden_set.run_reviewer_golden_set   # re-run the numbers above
+.venv/Scripts/python -m pytest tests/ -q          # 185 tests, no live LLM needed
+.venv/Scripts/python -m eval.golden_set.run_reviewer_golden_set   # re-run the numbers above (Ollama-only today)
 
 # Extension
 cd extension
