@@ -481,6 +481,24 @@ Adopted deliberately, tradeoff and all: real, substantial gains in precision and
 
 ---
 
+## Round 9 — a real OpenAI provider, given a real API key
+
+The user pasted a real OpenAI API key directly into chat. Handled as a real credential-security event, not just an implementation task: never written to any file, never committed, never echoed back — flagged directly to the user that a key pasted into a chat transcript should be treated as exposed and rotated afterward, independent of anything built with it here.
+
+Two real decisions confirmed with the user before writing any code, since this is the first place in the whole project with a genuine per-call dollar cost: which model (`gpt-4o-mini` — cheap, fast, a reasonable default for a pipeline that makes 3+ calls per task), and scope (full replacement of Ollama as the default, not just an opt-in path). Asked "first check whether key is working" — tested it directly with a minimal real call before building anything else: `SUCCESS: OK`, `model: gpt-4o-mini-2024-07-18`.
+
+**`app/llm/openai_provider.py`** — a real `OpenAIProvider`, structurally mirroring `OllamaProvider` (same `AsyncOpenAI` client, same `chat()`/`embed()` shape) but built as a separate class rather than a shared base — `OllamaProvider` is already covered by tests elsewhere in the suite, and duplicating ~70 lines was judged a smaller risk than refactoring already-tested code. `factory.py` gained a real `provider == "openai"` branch; the API key is read from `OPENAI_API_KEY` (the standard name the `openai` SDK itself expects) and the constructor raises immediately with a clear message if it's missing, rather than failing confusingly on the first real call.
+
+**A real interaction bug, caught and fixed before it could bite:** `graph.py`'s `DEFAULT_REVIEW_MODEL = "qwen2.5-coder:7b"` (Round 7's golden-set-verified pick) is an Ollama-only model name. Left as the review() node's silent default, switching `RELEASEFORGE_LLM_PROVIDER` to `openai` would have passed that nonexistent model name straight to the real OpenAI API and failed every single review call. Fixed with a new `_resolve_review_model()`: an explicit `RELEASEFORGE_REVIEW_MODEL` override still always wins; otherwise the golden-set model only applies when Ollama is actually the active provider, and every other provider falls back to its own general default instead. The golden-set harness's own `model=` reporting label was updated to mirror the same resolution, so a future run under a different provider can't silently mislabel itself either.
+
+**Embedding cost tracking added, not left as a gap:** `app/llm/cost.py` had chat-model pricing but no embedding-model entries. Added `text-embedding-3-small`/`text-embedding-3-large` (input-only pricing, output rate 0.0 since embeddings have no completion side) and wired `OpenAIProvider.embed()` to actually record a real, non-None cost per call — RAG ingestion and retrieval calls now get real dollar tracking, not silence.
+
+**Set up as a real, local, opt-out configuration, not a hardcoded default.** `OPENAI_API_KEY` and `RELEASEFORGE_LLM_PROVIDER=openai` were set as persistent Windows user environment variables (`setx`, never written to any file in the repo) — matching this project's own established "env/PATH changes need a full VS Code restart" pattern from earlier in the session. The code's own default remains `ollama` — free, local, no key required — so the repo stays runnable by anyone without an OpenAI key; this machine's real preference lives in its environment, not in source.
+
+**Verified.** 9 new fast unit tests (`tests/test_openai_provider.py`, `tests/test_cost.py`) — `OpenAIProvider` construction (missing key raises clearly; key from env or passed directly both work), factory provider selection, and all three branches of `_resolve_review_model()` (explicit override wins; Ollama gets the golden-set model; any other provider defers to its own default) — 185 tests pass overall (up from 176). The one thing not yet done: re-running the golden-set eval against `gpt-4o-mini` for a real Ollama-vs-OpenAI comparison — real API cost, not attempted without being asked.
+
+---
+
 ## Concept coverage
 
 Every phase maps back to the design doc's Section 22 checklist — nothing in the original vision is dropped, only reordered:

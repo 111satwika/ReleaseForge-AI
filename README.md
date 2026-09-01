@@ -120,7 +120,7 @@ Obvious approach: keep prompts as f-strings inside the node functions that use t
 
 ## Known limitations
 
-- **No GPT-4/paid-model comparison.** `backend/app/llm/factory.py` only ever returns an Ollama provider; no OpenAI/Anthropic adapter is wired in. Comparing the local model against a frontier model was scoped out rather than faked with invented numbers.
+- **A real OpenAI provider exists (`app/llm/openai_provider.py`, selected via `RELEASEFORGE_LLM_PROVIDER=openai`), but the golden-set comparison against it hasn't been run.** All the Review Agent numbers above are Ollama-only. Swapping providers is real and live-verified (a real API call against `gpt-4o-mini` was confirmed working before this was wired in) — re-running the 58-fixture eval against it, at real API cost, just hasn't been done yet. No Anthropic adapter exists yet.
 - **CPU-only local inference is slow.** No GPU on the development machine; a single LLM call has been measured between ~35s and ~240s depending on prompt/response length. A full 58-fixture eval run has been measured at ~50 minutes.
 - **Cloud deployment (AWS) is not implemented.** Deliberately deferred — it needs real cloud credentials and incurs real billed cost, which wasn't authorized. Kubernetes deployment is real, but only against a local `kind` cluster.
 - **Minor-defect catch rate is not a reliable number at n=6** (see above) — reported anyway, with the caveat, rather than dropped.
@@ -147,4 +147,4 @@ npm install && npm run compile
 
 ## Tech stack
 
-Python, FastAPI, LangGraph, MCP SDK, Ollama, ChromaDB, SQLAlchemy/SQLite, TypeScript, VS Code Extension API, Docker, Kubernetes (`kind`), GitHub Actions.
+Python, FastAPI, LangGraph, MCP SDK, Ollama or OpenAI (pluggable), ChromaDB, SQLAlchemy/SQLite, TypeScript, VS Code Extension API, Docker, Kubernetes (`kind`), GitHub Actions.

@@ -28,6 +28,10 @@ PRICING_PER_1K_TOKENS_USD: dict[str, tuple[float, float]] = {
     "claude-3-5-sonnet-20241022": (0.003, 0.015),
     "claude-3-5-haiku-20241022": (0.0008, 0.004),
     "claude-3-opus-20240229": (0.015, 0.075),
+    # Embedding models have no "output" side — input rate only, output rate 0.0.
+    # embed() below always passes completion_tokens=0, so this never actually multiplies.
+    "text-embedding-3-small": (0.00002, 0.0),
+    "text-embedding-3-large": (0.00013, 0.0),
 }
 
 

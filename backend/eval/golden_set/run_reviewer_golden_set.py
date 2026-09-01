@@ -46,7 +46,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.agents.graph import DEFAULT_REVIEW_MODEL, DEFAULT_REVIEW_PROMPT, review  # noqa: E402
+from app.agents.graph import DEFAULT_REVIEW_PROMPT, _resolve_review_model, review  # noqa: E402
+from app.llm.factory import get_llm_provider  # noqa: E402
 from app.prompts import prompt_hash  # noqa: E402
 from eval.golden_set.dataset import ReviewFixture, load_golden_set  # noqa: E402
 
@@ -186,10 +187,12 @@ def _print_report(metrics: dict, results: list[dict], model: str) -> None:
 
 async def _run_all(prompt_name: str) -> tuple[dict, list[dict], str]:
     fixtures = load_golden_set()
-    # Mirrors review()'s own resolution exactly, so the report's "model=" label is never
-    # wrong — review() picks its model independently inside the call, this is purely for
-    # accurate display/recording here.
-    model = os.getenv("RELEASEFORGE_REVIEW_MODEL", DEFAULT_REVIEW_MODEL)
+    # Mirrors review()'s own resolution exactly (including the ollama-only default), so
+    # the report's "model=" label is never wrong — review() picks its model independently
+    # inside the call, this is purely for accurate display/recording here. When
+    # _resolve_review_model() defers to the provider's own default (non-Ollama provider,
+    # no explicit override), fall back to whatever get_llm_provider() would actually pick.
+    model = _resolve_review_model() or getattr(get_llm_provider(), "model", "unknown")
     semaphore = asyncio.Semaphore(CONCURRENCY)
     results = await asyncio.gather(*(_run_one(f, semaphore, prompt_name) for f in fixtures))
     metrics = _compute_metrics(results)

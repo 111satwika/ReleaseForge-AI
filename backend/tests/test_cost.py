@@ -30,3 +30,11 @@ def test_estimate_cost_zero_tokens_is_zero_dollars_not_none():
     unrecognized model, which is genuinely unknown, not zero."""
     result = estimate_cost("gpt-4o", prompt_tokens=0, completion_tokens=0)
     assert result.estimated_cost_usd == 0.0
+
+
+def test_embedding_model_cost_ignores_completion_tokens():
+    """Embeddings have no output side — OpenAIProvider.embed() always passes
+    completion_tokens=0, and the pricing table's output rate for embedding models is 0.0
+    to match, so passing a nonzero completion_tokens here still can't inflate the cost."""
+    result = estimate_cost("text-embedding-3-small", prompt_tokens=1000, completion_tokens=999)
+    assert result.estimated_cost_usd == round(1.0 * 0.00002, 6)

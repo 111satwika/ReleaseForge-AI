@@ -44,6 +44,23 @@ DEFAULT_REVIEW_PROMPT = "review_agent_v2"
 DEFAULT_REVIEW_MODEL = "qwen2.5-coder:7b"
 
 
+def _resolve_review_model() -> str | None:
+    """DEFAULT_REVIEW_MODEL is an Ollama-only model name — only the Review Agent's
+    behavior on qwen2.5-coder:7b was ever evaluated (see the golden-set note above).
+    Applying it under a different provider (e.g. RELEASEFORGE_LLM_PROVIDER=openai) would
+    pass a nonexistent model name straight to that provider's real API and fail every
+    call. If an explicit RELEASEFORGE_REVIEW_MODEL override is set, that always wins,
+    same as before; otherwise this only defaults to the golden-set-verified model when
+    Ollama is actually the active provider, and returns None (get_llm_provider()'s own
+    provider-appropriate default) for anything else."""
+    override = os.getenv("RELEASEFORGE_REVIEW_MODEL")
+    if override:
+        return override
+    if os.getenv("RELEASEFORGE_LLM_PROVIDER", "ollama") == "ollama":
+        return DEFAULT_REVIEW_MODEL
+    return None
+
+
 def is_affirmative(text: str) -> bool:
     return text.strip().lower() in AFFIRMATIVE
 
@@ -468,7 +485,7 @@ async def review(state: AgentState, prompt_name: str = DEFAULT_REVIEW_PROMPT) ->
     # harness (run_reviewer_golden_set.py) ever passes a different version, so it can
     # A/B a candidate prompt through this exact real code path before graph.py's default
     # is ever changed. Production behavior is unaffected until that default itself moves.
-    review_model = os.getenv("RELEASEFORGE_REVIEW_MODEL", DEFAULT_REVIEW_MODEL)
+    review_model = _resolve_review_model()
     llm = get_llm_provider(model=review_model)
     round_num = state.get("review_round", 0) + 1
 

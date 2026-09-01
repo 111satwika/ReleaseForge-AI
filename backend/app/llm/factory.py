@@ -2,6 +2,7 @@ import os
 
 from .base import LLMProvider
 from .ollama_provider import OllamaProvider
+from .openai_provider import OpenAIProvider
 
 
 def get_llm_provider(model: str | None = None) -> LLMProvider:
@@ -15,5 +16,10 @@ def get_llm_provider(model: str | None = None) -> LLMProvider:
         embedding_model = os.getenv("RELEASEFORGE_EMBEDDING_MODEL", "nomic-embed-text")
         return OllamaProvider(model=resolved_model, embedding_model=embedding_model)
 
-    # openai / anthropic providers get added here later, same LLMProvider shape.
+    if provider == "openai":
+        resolved_model = model or os.getenv("RELEASEFORGE_LLM_MODEL", "gpt-4o-mini")
+        embedding_model = os.getenv("RELEASEFORGE_EMBEDDING_MODEL", "text-embedding-3-small")
+        return OpenAIProvider(model=resolved_model, embedding_model=embedding_model)
+
+    # anthropic provider gets added here later, same LLMProvider shape.
     raise ValueError(f"Unknown LLM provider: {provider}")
