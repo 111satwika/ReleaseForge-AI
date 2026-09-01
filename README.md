@@ -60,7 +60,7 @@ flowchart LR
     LLM["Ollama\n(local, OpenAI-compatible API)"]
     Cluster["kind (local Kubernetes)"]
 
-    Chat -- HTTP :8000 --> API
+    Chat -- HTTP :8420 --> API
     API --> Graph
     Graph --> MCP
     Graph --> RAG
