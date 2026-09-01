@@ -1,0 +1,601 @@
+{
+  "model": "gpt-4o-mini",
+  "prompt_name": "review_agent_v2",
+  "metrics": {
+    "critical_catch_rate": 94.4,
+    "major_catch_rate": 61.1,
+    "minor_catch_rate": 100.0,
+    "overall_catch_rate": 81.0,
+    "false_positive_rate_per_100_lines": 14.42,
+    "precision": 69.4,
+    "recall": 81.0,
+    "true_positives": 34,
+    "false_negatives": 8,
+    "false_positives": 15,
+    "true_negatives": 1,
+    "defect_count": 42,
+    "clean_count": 16
+  },
+  "results": [
+    {
+      "id": "sqli_user",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The current implementation of the SQL query is vulnerable to SQL injection since the user input 'name' is directly concatenated into the query string. This could allow an attacker to manipulate the query by providing a specially crafted input.\nSuggestion: Consider using parameterized queries or prepared statements to safely handle user input.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "sqli_order",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "APPROVED",
+      "review_feedback": "",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "sqli_payment",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The implementation is vulnerable to SQL injection due to the use of string concatenation for the query. The user input 'name' should be parameterized.\nWarning: No null/None safety checks for the cursor or name parameters.\nSuggestion: Consider implementing error handling for the database query.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "sqli_inventory",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The SQL query uses string concatenation to include the 'name' parameter, which exposes the code to SQL injection vulnerabilities. This can be easily exploited to execute arbitrary SQL commands.\nSuggestion: Update the SQL query to use parameterized queries to safely incorporate user input.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "sqli_session",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: SQL injection risk: The query uses string concatenation to build an SQL statement, allowing for potential SQL injection through the 'name' parameter.\nSuggestion: Consider using parameterized queries to safely pass the 'name' value into the SQL statement to prevent injection issues.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "sqli_invoice",
+      "defect_type": "sql_injection",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: SQL injection vulnerability: the query concatenates user input (`name`) directly into the SQL statement without parameterization, which exposes the application to SQL injection attacks.\nWarning: The function currently does not handle the case where no invoice is found. It will return `None`, but this should ideally be documented or handled explicitly.\nSuggestion: Consider parameterizing the SQL query to prevent SQL injection, e.g., by using placeholders and the appropriate cursor method for binding.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_user",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded sensitive data (API key) should not be included in the source code.\nWarning: Potential lack of authentication handling; if the API requires different handling based on the user's credentials or roles, this should be managed.\nSuggestion: Consider using environment variables or a secure vault service to manage sensitive credentials.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_order",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded API key poses a security risk and should not be stored directly in the code. It should be retrieved from an environment variable or a secure configuration solution.\nSuggestion: Consider adding error handling for network requests to enhance stability and robustness.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_payment",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded API key is exposed in the source code, posing a security risk.\nSuggestion: Implement a method to retrieve the API key from a secure environment variable instead of hardcoding it.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_inventory",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded API key poses a security risk; it should be stored in environment variables or a secure vault instead of being hardcoded.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_session",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded API key present in code, exposing it to potential security risks.\nWarning: The code does not handle potential exceptions that may arise from network requests.\nSuggestion: Consider fetching the API key from environment variables instead of hardcoding it.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "secret_invoice",
+      "defect_type": "hardcoded_secret",
+      "severity": "critical",
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Hardcoded API key in the source code presents a security risk and should be replaced with an environment variable or secure vault retrieval.\nSuggestion: Consider implementing error handling for API requests, in case of network failure or unexpected responses.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_user",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null safety: If record is None or record.owner is None, accessing record.owner.email will raise an AttributeError.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_order",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null/None safety: The code accesses 'record.owner.email' without checking if 'record' or 'record.owner' could be None, which could lead to an AttributeError in production.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_payment",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential Null/None safety issue: Accessing 'record.owner.email' assumes both 'record' and 'record.owner' are not None. If 'store.get(payment_id)' returns None or if 'record.owner' is None, this will raise an AttributeError.\nSuggestion: Consider adding checks to ensure 'record' and 'record.owner' are not None before attempting to access 'record.owner.email'. Perhaps returning None or raising a more descriptive exception if the email cannot be retrieved would be helpful.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_inventory",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Accessing record.owner.email without checking if record or record.owner is None may lead to an AttributeError in production.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_session",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Null safety issue: The code accesses `record.owner.email` without checking if `record` or `record.owner` is None, which could lead to an AttributeError at runtime.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "nullcheck_invoice",
+      "defect_type": "missing_null_check",
+      "severity": "major",
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Accessing record.owner.email could raise an AttributeError if record is None or if record.owner is None.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_user",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The loop in the last_n function is not iterating correctly: it should start at 0 instead of 1, and the range should be `range(n)` to ensure that it includes all N items if available.\nWarning: The function does not handle cases where items is None or has fewer than N elements properly, which may cause an IndexError.\nSuggestion: Consider using slicing to return the last N items directly instead of looping.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_order",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The implementation of the last_n function has an off-by-one error: it iterates from 1 to n (exclusive). This may lead to an incorrect number of items being returned if n is equal to or greater than the length of items. Additionally, if items is empty or n is greater than the length of items, this code will raise an IndexError.\nWarning: There is no check for None values in items, which could lead to unexpected behavior if None is passed.\nSuggestion: Consider using list slicing to simplify the implementation. For example: return items[-n:] can efficiently return the last N items.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_payment",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The loop in `last_n` does not handle the case where `n` is greater than the length of `items`, which can lead to an IndexError when trying to access items that do not exist.\nWarning: The function does not return the last `n` items correctly; it starts from 1 instead of 0, which results in missing the last item.\nSuggestion: Consider using slicing instead of a loop for simpler and more efficient code: `return items[-n:]`.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_inventory",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The implementation of `last_n` has an off-by-one error in the loop creating the result list. The `range(1, n)` starts from 1 and runs to n-1, missing the last item in the `items` list when n is equal to or greater than the length of the items.\nWarning: The function does not account for cases where n is greater than the length of the items list, which can lead to an IndexError.\nSuggestion: Consider using slicing directly instead of a loop to simplify the code: `return items[-n:]`.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_session",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The implementation of last_n has an off-by-one error. The range should be adjusted to include the last item. It currently only retrieves items from index len(items) - 1 to len(items) - n, missing the last item when n is equal to the length of items.\nSuggestion: Consider adding a check for None or empty list inputs before processing to avoid potential index errors.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "offbyone_invoice",
+      "defect_type": "off_by_one",
+      "severity": "major",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The last_n function has an off-by-one error in the loop. It currently starts from 1 and goes up to n-1, which would miss the last item in the list if n is greater than 0.\nSuggestion: Consider adding a check to handle cases where n is greater than the length of items.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_user",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not check if the 'raw' input is None or not a valid JSON string, which could lead to a crash when accessing data. Additionally, there is no error handling for missing keys in the parsed dictionary (e.g., 'id' or 'name' could be missing). This could lead to a KeyError.\nSuggestion: Consider adding error handling for JSON decoding errors and for missing keys in the parsed data, to ensure that the function behaves safely in all cases.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_order",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potentially missing checks for None values in data (e.g., 'id' or 'name' missing in the JSON input can lead to KeyError).",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_payment",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not handle the case where 'data' may not include the expected keys 'id' or 'name', which could result in a KeyError if the JSON structure is not as anticipated.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_inventory",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential None safety issue: The code accesses keys 'id' and 'name' directly from 'data' without checking if 'data' is None or if those keys exist, which could lead to KeyError or TypeError if the input JSON does not contain these keys.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_session",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: JSON parsing without validation could lead to KeyError if keys 'id' or 'name' are missing from the input.\nSuggestion: Consider adding error handling for JSON parsing (e.g., using try-except for json.JSONDecodeError).",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "unhandled_invoice",
+      "defect_type": "unhandled_exception",
+      "severity": "minor",
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not handle the case where the JSON string does not contain the 'id' or 'name' keys, which could lead to a KeyError. Proper error handling should be implemented to check for the existence of these keys.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_user",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code accesses 'record.owner_id' without checking if 'record' is None. If the query for the user with 'user_id' returns None, trying to access 'owner_id' would raise an AttributeError.\nCritical: The code does not handle the case where the owner query returns None. If there is no owner found with 'record.owner_id', accessing 'owner' may lead to an unexpected structure or failure.\nSuggestion: Consider using a more efficient single query to get both user and owner information, rather than making two sequential queries which can increase latency.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_order",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential Null/None safety issue when accessing record.owner_id; if record is None due to a failed query, this will raise an exception.\nWarning: Consider using a more efficient query to join orders and users in a single database call.\nSuggestion: Add error handling for when an order is not found in the database.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_payment",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code does not handle the case where `record` could be None, leading to potential access of `record.owner_id` causing an AttributeError.\nSuggestion: Consider batching the queries or using JOIN to optimize the database calls.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_inventory",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential Null/None safety issue: 'record' can be None if the inventory_id does not exist in the database. Accessing 'record.owner_id' would raise an AttributeError.\nCritical: The result of the query for the owner could return None if no user exists for the owner_id, leading to another potential dereferencing issue.\nSuggestion: Consider using parameter binding consistently to protect against SQL injection in the first query as well.\nSuggestion: It might be beneficial to check if 'record' and 'owner' exist before appending them to 'results' to handle cases gracefully.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_session",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The code potentially dereferences attributes on the 'record' object without checking for None. If the database query does not find a session for a given session_id, 'record' could be None, leading to an attempt to access 'record.owner_id', resulting in an AttributeError.\nWarning: None\nSuggestion: Consider adding error handling for cases where a session is not found for a given session_id, and ensure the returned 'owner' is properly checked and handled.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "n_plus_one_invoice",
+      "defect_type": "n_plus_one_query",
+      "severity": "major",
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential null/None safety issue accessing record.owner_id without checking if record is None.\nSuggestion: Consider using a single query to get both invoice and owner information to reduce database calls.",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "race_user",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Concurrency issue: The `_available_user_slots` variable is being modified without any form of synchronization, which could lead to race conditions when `reserve_user_slot` is called concurrently by multiple requests.\nSuggestion: Consider adding a locking mechanism to ensure that the reservation logic is successfully synchronized across concurrent calls.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "race_order",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The current implementation of reserve_order_slot does not handle concurrency properly, as it modifies the shared variable _available_order_slots without any synchronization mechanism, leading to potential race conditions. This could result in more slots being reserved than available.\nSuggestion: Consider adding a locking mechanism to ensure that changes to _available_order_slots are thread-safe.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "race_payment",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: There is a potential race condition when multiple concurrent calls to `reserve_payment_slot()` are made, which could lead to an incorrect decrement of `_available_payment_slots` and allow more reservations than available slots.\nSuggestion: Consider using an asynchronous lock (e.g., `asyncio.Lock()`) to ensure that updates to `_available_payment_slots` are thread-safe among concurrent calls.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "race_inventory",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential race condition when accessing or modifying _available_inventory_slots without synchronization, which could lead to incorrect inventory counts when called concurrently.\nSuggestion: Consider using a locking mechanism or an atomic operation to safely manage access to _available_inventory_slots.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "race_session",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The `reserve_session_slot` function modifies `_available_session_slots` without any concurrency control, which can lead to race conditions if multiple requests attempt to reserve a slot simultaneously.\nSuggestion: Consider adding a lock or using an atomic operation to ensure thread safety when checking and modifying `_available_session_slots`.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "race_invoice",
+      "defect_type": "race_condition",
+      "severity": "critical",
+      "line_count": 10,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The function is not thread-safe or suitable for concurrent access as is, because it directly modifies the shared state `_available_invoice_slots` without any locking mechanism, leading to potential race conditions.\nSuggestion: Consider implementing a locking mechanism to ensure that the reservation process is safe when accessed concurrently by multiple requests.",
+      "caught": true,
+      "false_positive": false
+    },
+    {
+      "id": "clean_add_field_user",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The test result is PASSED, but since the change only adds an optional field, it should be verified that the rest of the application correctly handles instances of User without the 'display_name'. Specifically, ensure that the code does not assume 'display_name' will always be present and access it without checking for None.\nSuggestion: Consider updating the documentation or comments for the User model to reflect the new optional 'display_name' field.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_parameterized_query",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result shows PASSED, however, the code does not handle the case where the order_id might be None. This could lead to a SQL statement being constructed incorrectly.\nSuggestion: Consider checking if order_id is None before executing the query.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_env_var_secret",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Environment variable PAYMENT_API_KEY is not checked for existence before accessing, leading to KeyError if it is missing.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_null_checked",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result is PASSED, but if the record.owner object does not have the attribute 'email', this will raise an AttributeError, which can lead to production failures.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_correct_slice",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The function does not handle cases where 'items' may be None, which could lead to a TypeError when attempting to slice it.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_try_except_import",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 9,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The function does not handle the case where 'data' is None or does not contain the keys 'id' or 'name'. This could lead to KeyError exceptions during access.\nSuggestion: Consider returning a more informative error response in case of malformed input instead of just None.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_batched_query",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Potential SQL injection risk due to the use of string interpolation in the raw SQL query.\nSuggestion: Consider using parameterized queries to prevent SQL injection vulnerabilities.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_lock_protected_counter",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 13,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result shows PASSED, but there's no assertion on the expected behavior of the reservation function under concurrent access.\nWarning: None\nSuggestion: Add unit tests to cover concurrent access scenarios and validate that slots are correctly reserved without exceeding the limit.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_add_docstring",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 4,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Warning: The implementation of `format_currency` does not handle None or non-numeric values for the `amount` parameter, which could lead to runtime errors in production.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_rename_variable",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 6,
+      "review_status": "APPROVED",
+      "review_feedback": "",
+      "caught": false,
+      "false_positive": false
+    },
+    {
+      "id": "clean_add_type_hints",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Suggestion: Consider adding None safety checks to ensure `session` and `session.expires_at` are not None before performing comparisons.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_extract_constant",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 5,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Suggestion: Consider adding input validation to ensure 'amount' is a valid numerical type before performing the comparison.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_add_logging",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 9,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result is marked as PASSED, but the addition of logging introduces a potential issue if order is None, leading to a possible NoneType attribute error when accessing order.id.\nSuggestion: Consider adding a check to ensure that 'order' is not None before attempting to access its attributes.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_input_validation",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 6,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result is TRAILING FAILED, indicating that the change may not function correctly.\nSuggestion: Consider adding more email validation to ensure better adherence to email format standards.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_add_index_field",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 7,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: The addition of the 'created_at' field does not account for potential issues with time zones when used in different environments.\nWarning: Consider using a more explicit method for setting the timestamp, such as a class method to ensure consistency.",
+      "caught": false,
+      "false_positive": true
+    },
+    {
+      "id": "clean_test_only_change",
+      "defect_type": null,
+      "severity": null,
+      "line_count": 8,
+      "review_status": "CHANGES_REQUESTED",
+      "review_feedback": "Critical: Test result indicates the requested change was not sufficiently validated or tested with the new default retry value.",
+      "caught": false,
+      "false_positive": true
+    }
+  ]
+}

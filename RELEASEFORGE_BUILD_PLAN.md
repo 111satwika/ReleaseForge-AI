@@ -499,6 +499,26 @@ Two real decisions confirmed with the user before writing any code, since this i
 
 ---
 
+## Round 10 — the Ollama-vs-OpenAI comparison, run for real
+
+Requested directly: run the same 58-fixture golden set against the new OpenAI provider. Run with `--num-runs 3`, matching the same rigor Round 7 established — a single run of a non-deterministic model isn't a trustworthy number, and `gpt-4o-mini` had never been benchmarked at all.
+
+**Real, striking result — not what a "cheaper model is worse" assumption would predict:**
+
+| Metric | Ollama (shipped, `qwen2.5-coder:7b`) | `gpt-4o-mini` |
+|---|---|---|
+| Critical catch | 92.6% [83.3–100] | **98.1%** [94.4–100] |
+| Major catch | 61.1% [50–66.7] | 61.1% [55.6–66.7] |
+| Recall | 73.0% [69–78.6] | **81.0%** [81.0–81.0 — identical every run] |
+| Precision | **97.0%** [93.8–100] | 69.9% [69.4–70.8] |
+| False positives | **1.0/100 lines** [0–1.92] | 14.1/100 lines [13.46–14.42] |
+
+`gpt-4o-mini` genuinely detects more real defects — higher critical/minor catch, higher recall, and (notably) *far* more stable recall run-to-run (identical TP/FN split all 3 times, versus the local model's real spread) — a data point in favor of frontier(ish) models being less prone to the run-to-run noise Round 7 found. But its precision is a real, reproducible problem: **13–15 of the 16 clean fixtures were flagged in every single run**, and — checked directly, not assumed — it's essentially the *same* ~14 fixtures every time (`clean_add_field_user`, `clean_null_checked`, `clean_add_docstring`, ... all three runs), a systematic calibration bias, not noise. A reviewer that flags nearly everything gives a human no real signal even when its raw detection rate is higher. Not committed to `champion.json` — that stays the actual production baseline (Ollama + the tuned prompt). Saved as `eval/golden_set/results/latest_openai_gpt4o_mini_run{1,2,3}.json` for reference.
+
+**A real, minor issue the run itself surfaced, noted rather than silently ignored:** each of the 174 live `review()` calls across the 3 runs constructs a fresh `OpenAIProvider`/`AsyncOpenAI` client (the existing per-node provider-instantiation pattern this whole project already uses — `get_llm_provider()` is a stateless factory called fresh on every node invocation, true for Ollama too). For Ollama this was invisible; for OpenAI, each client opens a real TLS connection, and many uncleaned-up clients produced a flood of `RuntimeError: Event loop is closed` warnings at process exit (an asyncio/httpx client-cleanup-after-loop-close issue on Windows). Cosmetic, not fatal — exit code 0, real numbers extracted correctly both times — but a real inefficiency (fresh TLS handshake per call instead of a pooled connection) worth knowing about if this pattern gets used for a larger, sustained OpenAI workload. Not fixed here — the eval completed successfully and fixing it means reconsidering provider lifecycle across the whole codebase, not a one-file patch, so it's named honestly rather than patched reflexively.
+
+---
+
 ## Concept coverage
 
 Every phase maps back to the design doc's Section 22 checklist — nothing in the original vision is dropped, only reordered:
